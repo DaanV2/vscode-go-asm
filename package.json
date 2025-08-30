@@ -9,15 +9,29 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:go",
+    "onLanguage:golang",
+    "onCommand:daanv2-go-asm.show-assembly"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "daanv2-go-asm.helloWorld",
-        "title": "Hello World"
+        "command": "daanv2-go-asm.show-assembly",
+        "title": "Show Go Assembly",
+        "enablement": "editorLangId == 'go'"
       }
-    ]
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "daanv2-go-asm.show-assembly",
+          "group": "Go",
+          "when": "editorLangId == 'go'"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
