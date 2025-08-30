@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
-import { EXTENSION_SCHEMA } from "../format";
+import { EXTENSION_SCHEMA, fileURI } from "../format";
 import { CommandOptions, runGoCommand } from "../go/commands";
 import path from "path";
+import { AssemblyBlock } from "../assembly/info";
 
 export class AssemblyDocumentProvider
   implements vscode.TextDocumentContentProvider
@@ -27,8 +28,8 @@ export class AssemblyDocumentProvider
     }
 
     const options: CommandOptions = {};
-    const fs = uri.fsPath;
-    const dir = path.dirname(fs);
+    const fs = fileURI(uri).fsPath;
+    const packageDir = path.dirname(fs);
     const ws = vscode.workspace.getWorkspaceFolder(uri);
     if (ws) {
       options.cwd = ws.uri.fsPath;
@@ -40,7 +41,7 @@ export class AssemblyDocumentProvider
     }
 
     // go build -gcflags="-S" ./package/subpackage
-    const result = await vscode.window.withProgress(
+    const info = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Window,
         cancellable: true,
@@ -48,15 +49,33 @@ export class AssemblyDocumentProvider
       },
       async (progress, token) => {
         progress.report({ message: "compiling..." });
-
-        return await runGoCommand(
-          ["build", "-gcflags=-S -S", dir],
+        const result = await runGoCommand(
+          ["build", "-gcflags=-S", packageDir],
           options,
           token
         );
+
+        progress.report({ message: "parsing..." });
+        const info = AssemblyBlock.parse(result.stderr);
+
+        progress.report({ message: "done" });
+        return info;
       }
     );
 
-    return result.stderr;
+    return info.map(printAssemblyInfo(packageDir)).join("\n");
   }
+}
+
+function printAssemblyInfo(packageDir: string) {
+  packageDir = packageDir.replaceAll("\\\\", "/").replaceAll("\\", "/");
+  if (!packageDir.endsWith('/')) {
+    packageDir += '/';
+  }
+
+  return function (asm: AssemblyBlock): string {
+    const header = asm.header.replaceAll(' ', '\n#\t');
+
+    return `# ${header}\n${asm.data.join("\n")}\n`.replaceAll(packageDir, "");
+  };
 }
