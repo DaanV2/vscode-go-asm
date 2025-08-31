@@ -33,6 +33,15 @@ export async function getAsm(goUri: Uri): Promise<string> {
       token
     );
 
+    if ((result.code ?? 0) > 0) {
+      return [
+        {
+          header: "Whoops!",
+          data: ["Error compiling code", JSON.stringify(result, undefined, 2)],
+        },
+      ];
+    }
+
     // Parsing the assembly output
     progress.report({ message: "parsing..." });
     let info = AssemblyBlock.parse(result.stderr);
