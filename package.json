@@ -1,6 +1,6 @@
 {
   "description": "An extension that shows you assembly code of you go code",
-  "displayName": "Go ASM",
+  "displayName": "Go ASM Preview",
   "license": "BSD-3-Clause",
   "name": "daanv2-go-asm",
   "icon": "resources/icon.png",
