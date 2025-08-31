@@ -2,7 +2,7 @@
 
 [![🔍 PR](https://github.com/DaanV2/vscode-go-asm/actions/workflows/pull-request.yml/badge.svg)](https://github.com/DaanV2/vscode-go-asm/actions/workflows/pull-request.yml)
 
-<img src="resources/icon.png" alt="Go ASM logo" width="150" height="150">
+<img src="docs/assets/demo.gif" alt="Demo" width="400">
 
 A vscode extension for showing you Go's assembly output next with your Go code.
 
