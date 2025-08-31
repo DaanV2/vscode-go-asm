@@ -1,19 +1,20 @@
-import * as vscode from "vscode";
-import { EXTENSION_SCHEMA } from "./constants";
+import path from "path";
+import { Uri } from "vscode";
 
-export function goASMURI(uri: vscode.Uri): vscode.Uri {
-  return uri.with({ scheme: EXTENSION_SCHEMA, path: uri.path + ".asm" });
+export function goFSPath(uri: Uri | string): string {
+  const fs = typeof uri !== "string" ? uri.fsPath : uri;
+
+  return fs.replaceAll("\\\\", "//").replaceAll("\\", "/");
 }
 
 /**
- * transforms the given uri, that is generated from @see goASMURI and converts it back to a file
+ * If given a file, returns the path to the package
  * @param uri
  */
-export function fileURI(uri: vscode.Uri): vscode.Uri {
-  let p = uri.path;
-  if (p.endsWith(".go.asm")) {
-    p = p.slice(0, p.length - 3);
-  }
+export function packageUri(uri: Uri): Uri {
+  return Uri.joinPath(uri, "..");
+}
 
-  return uri.with({ scheme: "file", path: p });
+export function filename(uri: Uri): string {
+  return path.basename(uri.fsPath);
 }

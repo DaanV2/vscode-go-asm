@@ -13,21 +13,23 @@ export interface CommandOptions {
 }
 
 /**
- * Executes a Go subcommand and captures its output.
+ * Executes a command and captures its output.
  * @param args Array of arguments for the Go command (e.g., ['build', '-gcflags="-S"', './package/subpackage'])
  * @param options Optional working directory or environment variables
  * @param token Optional CancellationToken to allow stopping the process
  * @returns Promise resolving to { stdout, stderr }
  */
-export async function runGoCommand(
+export async function executeCommand(
+  command: "go" | "gopls",
   args: string[],
   options?: CommandOptions,
   token?: CancellationToken
 ): Promise<CommandOutput> {
   return new Promise((resolve, reject) => {
-    console.debug("executing command: go " + args.join(" "), options);
+    const infoCommand = command + " " + args.join(" ");
+    console.debug("executing command: " + infoCommand, options);
 
-    const goProcess = spawn("go", args, {
+    const cprocess = spawn(command, args, {
       shell: false,
       cwd: options?.cwd,
       env: { ...process.env, ...options?.env },
@@ -36,37 +38,30 @@ export async function runGoCommand(
     let stdout = "";
     let stderr = "";
 
-    goProcess.stdout.on("data", (data) => {
+    cprocess.stdout.on("data", (data) => {
       stdout += data.toString();
     });
 
-    goProcess.stderr.on("data", (data) => {
+    cprocess.stderr.on("data", (data) => {
       stderr += data.toString();
     });
 
-    goProcess.on("error", (err) => {
-      console.error(
-        "problem with go command: go " + args.join(" "),
-        options,
-        err
-      );
+    cprocess.on("error", (err) => {
+      console.error("problem with command: " + infoCommand, options, err);
       reject(err);
     });
 
-    goProcess.on("close", (code) => {
-      console.debug("command done: go " + args.join(" "));
+    cprocess.on("close", (code) => {
+      console.debug("command done: " + infoCommand);
       resolve({ stdout, stderr, code });
     });
 
     // Handle cancellation
     if (token) {
       token.onCancellationRequested(() => {
-        goProcess.kill();
-        reject(new Error("Go command cancelled"));
+        cprocess.kill();
+        reject(new Error("command cancelled"));
       });
     }
   });
 }
-
-// Example usage:
-// const { stdout, stderr } = await runGoCommand(['build', '-gcflags=-S', './mechanus/screens']);
