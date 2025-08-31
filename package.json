@@ -1,13 +1,27 @@
 {
-  "name": "daanv2-go-asm",
-  "displayName": "go-asm",
   "description": "An extension that shows you assembly code of you go code",
+  "displayName": "Go ASM",
+  "license": "BSD-3-Clause",
+  "name": "daanv2-go-asm",
+  "icon": "resources/icon.png",
+  "pricing": "Free",
+  "publisher": "DaanV2",
   "version": "0.0.1",
+  "author": {
+    "name": "DaanV2"
+  },
   "engines": {
     "vscode": "^1.103.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DaanV2/vscode-go-asm"
+  },
   "categories": [
     "Other"
+  ],
+  "extensionKind": [
+    "workspace"
   ],
   "activationEvents": [
     "onLanguage:go",
@@ -45,7 +59,7 @@
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "echo no test yet"
   },
   "devDependencies": {
     "@types/vscode": "^1.103.0",
@@ -56,8 +70,6 @@
     "eslint": "^9.32.0",
     "esbuild": "^0.25.8",
     "npm-run-all": "^4.1.5",
-    "typescript": "^5.9.2",
-    "@vscode/test-cli": "^0.0.11",
-    "@vscode/test-electron": "^2.5.2"
+    "typescript": "^5.9.2"
   }
 }
