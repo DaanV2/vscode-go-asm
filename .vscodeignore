@@ -12,4 +12,5 @@ esbuild.js
 node_modules/**
 out/**
 src/**
+docs/assets/**
 vsc-extension-quickstart.md
