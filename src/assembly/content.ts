@@ -50,14 +50,15 @@ export async function getAsm(goUri: Uri): Promise<string> {
     progress.report({ message: "filtering..." });
     const funcs = await getFunctions(goUri);
     info = info.filter((i) => {
-      for (const f of funcs) {
+      return funcs.some((f, index) => {
         if (i.header.includes(f)) {
+          i.sortIndex = index;
           return true;
         }
-      }
-
-      return false;
+      });
     });
+
+    info.sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
 
     // Done
     progress.report({ message: "done" });

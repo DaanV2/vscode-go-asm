@@ -1,6 +1,7 @@
 export interface AssemblyBlock {
   header: string;
   data: string[];
+  sortIndex?: number;
 }
 
 export namespace AssemblyBlock {
