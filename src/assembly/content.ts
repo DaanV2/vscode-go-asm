@@ -3,8 +3,11 @@ import { CommandOptions, executeCommand } from "../commands/commands";
 import { goFSPath, packageUri } from "../format";
 import { getFunctions } from "../go/dependencies";
 import { AssemblyBlock } from "./info";
+import { logger } from "../logger/logger";
 
 export async function getAsm(goUri: Uri): Promise<string> {
+  logger.info("getting assembly", { uri: goUri.toString() });
+
   const options: CommandOptions = {};
   const packageDir = goFSPath(packageUri(goUri));
   const ws = workspace.getWorkspaceFolder(goUri);

@@ -1,12 +1,13 @@
 import { executeCommand } from "./commands/commands";
 import * as vscode from "vscode";
+import { logger } from "./logger/logger";
 
 /**
  *
  * @returns
  */
 export async function canRun() {
-  console.debug("performing checks to see if extension can run");
+  logger.info("performing checks to see if extension can run");
 
   try {
     const [gov, goplsv] = await Promise.all([

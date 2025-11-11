@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
 import { CancellationToken } from "vscode";
+import { logger } from "../logger/logger";
 
 export interface CommandOutput {
   stdout: string;
@@ -27,7 +28,7 @@ export async function executeCommand(
 ): Promise<CommandOutput> {
   return new Promise((resolve, reject) => {
     const infoCommand = command + " " + args.join(" ");
-    console.debug("executing command: " + infoCommand, options);
+    logger.info("executing command: " + infoCommand, options);
 
     const cprocess = spawn(command, args, {
       shell: false,
@@ -47,12 +48,12 @@ export async function executeCommand(
     });
 
     cprocess.on("error", (err) => {
-      console.error("problem with command: " + infoCommand, options, err);
+      logger.error("problem with command: " + infoCommand, options, err);
       reject(err);
     });
 
     cprocess.on("close", (code) => {
-      console.debug("command done: " + infoCommand);
+      logger.info("command done: " + infoCommand);
       resolve({ stdout, stderr, code });
     });
 

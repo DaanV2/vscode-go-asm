@@ -1,5 +1,6 @@
 import { Uri, Webview, Disposable } from "vscode";
 import { AssemblyView } from "../view/webview";
+import { logger } from "../logger/logger";
 
 export class DocumentTracker {
   private _openFiles: Map<Uri, AssemblyView>;
@@ -9,6 +10,8 @@ export class DocumentTracker {
   }
 
   displayFile(uri: Uri) {
+    logger.info("displaying file", { uri });
+
     const view = new AssemblyView(uri);
     this._openFiles.set(uri, view);
 
