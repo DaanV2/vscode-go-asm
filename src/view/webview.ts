@@ -1,15 +1,18 @@
 import { Disposable, Uri, ViewColumn, WebviewPanel, window } from "vscode";
 import { filename } from "../format";
 import { getAsm } from "../assembly";
+import { GoEnvManager } from "../env";
 
 export class AssemblyView implements Disposable {
   readonly panel: WebviewPanel;
   readonly fileUri: Uri;
   readonly filename: string;
+  private readonly envManager: GoEnvManager;
 
-  constructor(uri: Uri) {
+  constructor(uri: Uri, envManager: GoEnvManager) {
     this.fileUri = uri;
     this.filename = filename(uri);
+    this.envManager = envManager;
 
     this.panel = window.createWebviewPanel(
       "goAsmViewer",
@@ -33,7 +36,7 @@ export class AssemblyView implements Disposable {
 
   async update() {
     try {
-      const asm = await getAsm(this.fileUri);
+      const asm = await getAsm(this.fileUri, this.envManager.getEnvVars());
       this.panel.webview.html = getHtml(asm, this.filename);
     } catch (err: any) {
       this.panel.webview.html = getHtml(

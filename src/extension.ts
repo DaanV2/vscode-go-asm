@@ -3,6 +3,7 @@
 import * as vscode from "vscode";
 import { canRun } from "./checks";
 import { DocumentTracker } from "./documents";
+import { GoEnvManager } from "./env";
 import { packageUri } from "./format";
 import { logger } from "./logger/logger";
 
@@ -12,16 +13,18 @@ export function activate(context: vscode.ExtensionContext) {
 
   canRun().then((ok) => {
     if (ok) {
-      context.subscriptions.push(...init());
+      context.subscriptions.push(...init(context));
     }
   });
 }
 
-function init() {
+function init(context: vscode.ExtensionContext) {
   logger.info("initializing Go Asm Preview");
-  const documentTracker = new DocumentTracker();
+  const envManager = new GoEnvManager(context);
+  const documentTracker = new DocumentTracker(envManager);
 
   return [
+    envManager,
     // Commands
     vscode.commands.registerCommand("daanv2-go-asm.show-assembly", async () => {
       const uri = vscode.window.activeTextEditor?.document.uri;
@@ -35,6 +38,18 @@ function init() {
       }
       documentTracker.displayFile(uri);
     }),
+    vscode.commands.registerCommand(
+      "daanv2-go-asm.select-goarch",
+      () => envManager.selectGoArch()
+    ),
+    vscode.commands.registerCommand(
+      "daanv2-go-asm.select-goos",
+      () => envManager.selectGoOS()
+    ),
+    vscode.commands.registerCommand(
+      "daanv2-go-asm.select-goenv",
+      () => envManager.selectGoEnv()
+    ),
     // Events
     vscode.workspace.onDidSaveTextDocument((e) => {
       if (!e.uri.fsPath.endsWith(".go")) {
