@@ -1,3 +1,4 @@
+import path from "path";
 import {
   Disposable,
   TextEditorDecorationType,
@@ -8,9 +9,8 @@ import {
   WebviewPanel,
   window,
 } from "vscode";
-import { filename } from "../format";
 import { getAsm } from "../assembly";
-import path from "path";
+import { filename } from "../format";
 
 interface SourceRef {
   srcFile: string;
