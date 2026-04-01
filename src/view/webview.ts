@@ -203,6 +203,9 @@ function createAssemblyLine(line: string, idx: number, lineToSource: Map<number,
       : ` data-asm-line="${idx}"`;
 
     const styledLine = escapeHtml(line)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
       .replace(/(0x[0-9a-f]+)/g, '<span class="addr">$1</span>')
       .replace(
         /\b(AX|AL|BX|CX|DX|SI|DI|R[0-9]+|SP|SB|BP)\b/g,
@@ -220,12 +223,12 @@ function renderHtml(filename: string, asmLines: string[]): string {
 <html>
 <head>
 <style>
-  body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; padding: 0; margin: 0; }
-  .addr { color: #808080; }
-  .op { color: #569cd6; }
-  .reg { color: #dcdcaa; }
-  .comment { color: #6a9955; font-style: italic; }
-  .src { background: #333; color: #c586c0; padding: 2px 4px; border-radius: 3px; }
+  body { font-family: var(--vscode-editor-font-family, monospace); background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); padding: 10px; }
+  .addr { color: var(--vscode-editorLineNumber-foreground); }
+  .op { color: var(--vscode-symbolIcon-keywordColor); }
+  .reg { color: var(--vscode-symbolIcon-variableColor); }
+  .comment { color: var(--vscode-descriptionForeground); font-style: italic; }
+  .src { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 2px 4px; border-radius: 3px; }
   .line { white-space: pre; min-height: 1em; padding: 0 10px; }
   .line:hover { background-color: #2a2a2a; }
   .line.match { background-color: #1e3a1e; }
