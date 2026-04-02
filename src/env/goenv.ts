@@ -315,9 +315,11 @@ export class GoEnvManager implements vscode.Disposable {
   /** Returns the -gcflags argument for go build based on the current optimizations setting. */
   getGcFlags(): string {
     const config = this.getConfig();
-    return config.disableOptimizations
-      ? "-gcflags=all=-S -N -l"
-      : "-gcflags=-S";
+    const flags = ["-S"];
+    if (config.disableOptimizations) {
+      flags.push("-N", "-l");
+    }
+    return `-gcflags=all=${flags.join(" ")}`;
   }
 
   /** Opens a two-step menu: first pick the variable, then pick its value. */
