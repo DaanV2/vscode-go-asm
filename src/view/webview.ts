@@ -206,11 +206,9 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function highlightLine(line: string): string {
-  return line
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
+/** Apply assembly syntax highlighting to an already-HTML-escaped line. */
+function syntaxHighlight(escaped: string): string {
+  return escaped
     .replace(/(0x[0-9a-f]+)/g, '<span class="addr">$1</span>')
     .replace(
       /\b(AX|AL|BX|CX|DX|SI|DI|R[0-9]+|SP|SB|BP)\b/g,
@@ -218,7 +216,7 @@ function highlightLine(line: string): string {
     )
     .replace(/\b([A-Z]{3,})\b/g, '<span class="op">$1</span>')
     .replace(/\(([^)]+\.go:\d+)\)/g, '<span class="src">($1)</span>')
-    .replace(/(#.*$|\/\/.*$)/, '<span class="comment">$1</span>');
+    .replace(/(#.*$|\/\/.*$)/g, '<span class="comment">$1</span>');
 }
 
 interface RenderBlock {
@@ -263,15 +261,7 @@ function createAssemblyLine(line: string, idx: number, lineToSource: Map<number,
     ? ` data-src-file="${escapeHtml(srcRef.srcFile)}" data-src-line="${srcRef.srcLine}" data-asm-line="${idx}"`
     : ` data-asm-line="${idx}"`;
 
-  const styledLine = escapeHtml(line)
-    .replace(/(0x[0-9a-f]+)/g, '<span class="addr">$1</span>')
-    .replace(
-      /\b(AX|AL|BX|CX|DX|SI|DI|R[0-9]+|SP|SB|BP)\b/g,
-      '<span class="reg">$1</span>',
-    )
-    .replace(/\b([A-Z]{3,})\b/g, '<span class="op">$1</span>')
-    .replace(/\(([^)]+\.go:\d+)\)/g, '<span class="src">($1)</span>')
-    .replace(/(#.*$|\/\/.*$)/gm, '<span class="comment">$1</span>');
+  const styledLine = syntaxHighlight(escapeHtml(line));
 
   return `<span class="line"${dataAttrs}>${styledLine}</span>`;
 }

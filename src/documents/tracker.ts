@@ -18,11 +18,11 @@ export class DocumentTracker {
     const view = new AssemblyView(uri, this.envManager);
     this._openFiles.set(uri, view);
 
-    // Subscribe onclosing
+    // Subscribe on closing
     let disposable: Disposable | undefined = undefined;
-    disposable = view.onDidClose((e) => {
+    disposable = view.onDidClose((_e) => {
       this._openFiles.delete(uri);
-      // unsubscripe
+      // unsubscribe
       disposable?.dispose();
       disposable = undefined;
       view.dispose();
@@ -47,6 +47,6 @@ export class DocumentTracker {
         logger.info("failed to update assembly view", { error: err });
       })
     );
-    Promise.allSettled(updates);
+    void Promise.allSettled(updates);
   }
 }

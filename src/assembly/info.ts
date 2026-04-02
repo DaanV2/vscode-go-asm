@@ -8,29 +8,28 @@ export namespace AssemblyBlock {
   export function parse(text: string): AssemblyBlock[] {
     const lines = text.split("\n");
 
-    let result: AssemblyBlock[] = [];
+    const result: AssemblyBlock[] = [];
     let i = 0;
-    while (lines[i].startsWith("#")) {
+    while (i < lines.length && lines[i].startsWith("#")) {
       i++;
     }
-    let last: AssemblyBlock = {
-      header: lines[i].trim(),
-      data: [],
-    };
+    if (i >= lines.length) {
+      return result;
+    }
+
+    let last: AssemblyBlock = { header: lines[i].trim(), data: [] };
     result.push(last);
 
     for (; i < lines.length; i++) {
-      const l = lines[i];
-      if (l.startsWith("\t")) {
-        last.data.push(l.trim());
+      const line = lines[i];
+      if (line.startsWith("\t")) {
+        last.data.push(line.trim());
       } else {
-        last = { header: lines[i].trim(), data: [] };
+        last = { header: line.trim(), data: [] };
         result.push(last);
       }
     }
 
-    return result.filter(
-      (e) => e.header.trim().length > 0 && e.data.length > 0
-    );
+    return result.filter((e) => e.header.length > 0 && e.data.length > 0);
   }
 }
