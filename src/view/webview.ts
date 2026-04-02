@@ -206,9 +206,6 @@ function createAssemblyLine(line: string, idx: number, lineToSource: Map<number,
     : ` data-asm-line="${idx}"`;
 
   const styledLine = escapeHtml(line)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
     .replace(/(0x[0-9a-f]+)/g, '<span class="addr">$1</span>')
     .replace(
       /\b(AX|AL|BX|CX|DX|SI|DI|R[0-9]+|SP|SB|BP)\b/g,
