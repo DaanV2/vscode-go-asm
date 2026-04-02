@@ -1,6 +1,9 @@
 import { Uri } from "vscode";
 import { executeCommand } from "../commands/commands";
 import { goFSPath } from "../format";
+import { parseFunctionSymbols } from "./symbols";
+
+export { parseFunctionSymbols } from "./symbols";
 
 export async function getFunctions(uri: Uri): Promise<string[]> {
   const fs = goFSPath(uri);
@@ -19,26 +22,5 @@ export async function getFunctions(uri: Uri): Promise<string[]> {
   // (*RSAKey).Private Method 20:18-20:25
   // (*RSAKey).Public Method 24:18-24:24
   // GenerateRSAKeys Function 28:6-28:21
-  const funcs = data.stdout
-    .split("\n")
-    .map((l) => {
-      let index = l.indexOf(" Function ");
-      if (index < 0) {
-        index = l.indexOf(" Method ");
-      }
-
-      return index > -1 ? l.slice(0, index).trim() : undefined;
-    })
-    .filter((l) => l !== undefined);
-
-  const result: string[] = [];
-  for (const f of funcs) {
-    result.push(f);
-    const n = f.replaceAll(/[\(\)\*]/gim, "");
-    if (n !== f) {
-      result.push(n);
-    }
-  }
-
-  return result;
+  return parseFunctionSymbols(data.stdout);
 }
