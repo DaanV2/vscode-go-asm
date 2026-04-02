@@ -47,6 +47,10 @@
       {
         "command": "daanv2-go-asm.select-goenv",
         "title": "Go ASM: Configure Go Environment Variables"
+      },
+      {
+        "command": "daanv2-go-asm.toggle-optimizations",
+        "title": "Go ASM: Toggle Compiler Optimizations"
       }
     ],
     "menus": {

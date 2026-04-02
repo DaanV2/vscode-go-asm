@@ -106,7 +106,11 @@ export class AssemblyView implements Disposable {
 
   async update() {
     try {
-      const asm = await getAsm(this.fileUri, this.envManager.getEnvVars());
+      const asm = await getAsm(
+        this.fileUri,
+        this.envManager.getEnvVars(),
+        this.envManager.getGcFlags()
+      );
       const { lineToSource, sourceToLines } = buildLineMaps(asm, this.filename);
       this._sourceToLines = sourceToLines;
       this.panel.webview.html = getHtml(asm, this.filename, lineToSource);

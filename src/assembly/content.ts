@@ -7,7 +7,8 @@ import { logger } from "../logger/logger";
 
 export async function getAsm(
   goUri: Uri,
-  env?: NodeJS.ProcessEnv
+  env?: NodeJS.ProcessEnv,
+  gcflags?: string
 ): Promise<string> {
   logger.info("getting assembly", { uri: goUri.toString() });
 
@@ -34,7 +35,7 @@ export async function getAsm(
     progress.report({ message: "compiling..." });
     const result = await executeCommand(
       "go",
-      ["build", "-gcflags=-S", packageDir],
+      ["build", gcflags ?? "-gcflags=-S", packageDir],
       options,
       token
     );
