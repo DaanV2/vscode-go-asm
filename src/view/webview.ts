@@ -11,6 +11,7 @@ import {
 } from "vscode";
 import { getAsm } from "../assembly";
 import { filename } from "../format";
+import { GoEnvManager } from "../env";
 
 interface SourceRef {
   srcFile: string;
@@ -48,14 +49,16 @@ export class AssemblyView implements Disposable {
   readonly panel: WebviewPanel;
   readonly fileUri: Uri;
   readonly filename: string;
+  private readonly envManager: GoEnvManager;
 
   private _sourceHighlight: TextEditorDecorationType;
   private _sourceToLines: Map<number, number[]> = new Map();
   private _disposables: Disposable[] = [];
 
-  constructor(uri: Uri) {
+  constructor(uri: Uri, envManager: GoEnvManager) {
     this.fileUri = uri;
     this.filename = filename(uri);
+    this.envManager = envManager;
 
     this._sourceHighlight = window.createTextEditorDecorationType({
       backgroundColor: new ThemeColor("editor.findMatchHighlightBackground"),
@@ -103,7 +106,7 @@ export class AssemblyView implements Disposable {
 
   async update() {
     try {
-      const asm = await getAsm(this.fileUri);
+      const asm = await getAsm(this.fileUri, this.envManager.getEnvVars());
       const { lineToSource, sourceToLines } = buildLineMaps(asm, this.filename);
       this._sourceToLines = sourceToLines;
       this.panel.webview.html = getHtml(asm, this.filename, lineToSource);
@@ -191,31 +194,28 @@ function highlightLine(line: string): string {
 }
 
 function getHtml(asm: string, filename: string, lineToSource: Map<number, SourceRef>) {
-  const processedLines =  asm.split("\n").map((line, idx) => createAssemblyLine(line, idx, lineToSource));
+  const processedLines = asm.split("\n").map((line, idx) => createAssemblyLine(line, idx, lineToSource));
 
   return renderHtml(filename, processedLines);
 }
 
 function createAssemblyLine(line: string, idx: number, lineToSource: Map<number, SourceRef>): string {
-    const srcRef = lineToSource.get(idx);
-    const dataAttrs = srcRef
-      ? ` data-src-file="${escapeHtml(srcRef.srcFile)}" data-src-line="${srcRef.srcLine}" data-asm-line="${idx}"`
-      : ` data-asm-line="${idx}"`;
+  const srcRef = lineToSource.get(idx);
+  const dataAttrs = srcRef
+    ? ` data-src-file="${escapeHtml(srcRef.srcFile)}" data-src-line="${srcRef.srcLine}" data-asm-line="${idx}"`
+    : ` data-asm-line="${idx}"`;
 
-    const styledLine = escapeHtml(line)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/(0x[0-9a-f]+)/g, '<span class="addr">$1</span>')
-      .replace(
-        /\b(AX|AL|BX|CX|DX|SI|DI|R[0-9]+|SP|SB|BP)\b/g,
-        '<span class="reg">$1</span>'
-      )
-      .replace(/\b([A-Z]{3,})\b/g, '<span class="op">$1</span>')
-      .replace(/\(([^)]+\.go:\d+)\)/g, '<span class="src">($1)</span>')
-      .replace(/(#.*$|\/\/.*$)/gm, '<span class="comment">$1</span>');
+  const styledLine = escapeHtml(line)
+    .replace(/(0x[0-9a-f]+)/g, '<span class="addr">$1</span>')
+    .replace(
+      /\b(AX|AL|BX|CX|DX|SI|DI|R[0-9]+|SP|SB|BP)\b/g,
+      '<span class="reg">$1</span>',
+    )
+    .replace(/\b([A-Z]{3,})\b/g, '<span class="op">$1</span>')
+    .replace(/\(([^)]+\.go:\d+)\)/g, '<span class="src">($1)</span>')
+    .replace(/(#.*$|\/\/.*$)/gm, '<span class="comment">$1</span>');
 
-    return `<span class="line"${dataAttrs}>${styledLine}</span>`;
+  return `<span class="line"${dataAttrs}>${styledLine}</span>`;
 }
 
 function renderHtml(filename: string, asmLines: string[]): string {
@@ -230,25 +230,26 @@ function renderHtml(filename: string, asmLines: string[]): string {
   .comment { color: var(--vscode-descriptionForeground); font-style: italic; }
   .src { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 2px 4px; border-radius: 3px; }
   .line { white-space: pre; min-height: 1em; padding: 0 10px; }
-  .line:hover { background-color: #2a2a2a; }
-  .line.match { background-color: #1e3a1e; }
+  .line:hover { background-color: var(--vscode-editor-hoverHighlightBackground); }
+  .line.asm-highlighted { background-color: var(--vscode-editor-findMatchHighlightBackground); border-left: 2px solid var(--vscode-editorLineNumber-activeForeground); }
+  .line.match { background-color: var(--vscode-editor-findMatchHighlightBackground); }
   .line.no-match { display: none; }
   .search-bar {
     position: sticky;
     top: 0;
-    background: #252526;
+    background: var(--vscode-sideBar-background, var(--vscode-editor-background));
     padding: 6px 10px;
     display: flex;
     align-items: center;
     gap: 12px;
-    border-bottom: 1px solid #3c3c3c;
+    border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-editorGroup-border));
     z-index: 10;
     flex-wrap: wrap;
   }
   .search-bar input[type="text"] {
-    background: #3c3c3c;
-    color: #d4d4d4;
-    border: 1px solid #555;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, transparent);
     border-radius: 4px;
     padding: 4px 8px;
     font-family: monospace;
@@ -257,17 +258,17 @@ function renderHtml(filename: string, asmLines: string[]): string {
     outline: none;
     box-sizing: border-box;
   }
-  .search-bar input[type="text"]:focus { border-color: #007acc; }
+  .search-bar input[type="text"]:focus { border-color: var(--vscode-focusBorder); }
   .search-bar label {
     display: flex;
     align-items: center;
     gap: 5px;
     cursor: pointer;
-    color: #ccc;
+    color: var(--vscode-foreground);
     font-size: 13px;
     user-select: none;
   }
-  #matchCount { color: #888; font-size: 12px; }
+  #matchCount { color: var(--vscode-descriptionForeground); font-size: 12px; }
   h3 { margin: 6px 0 2px 0; padding: 0 10px; }
   #asm { padding: 4px 0 10px 0; }
 </style>
@@ -282,11 +283,13 @@ function renderHtml(filename: string, asmLines: string[]): string {
 <div id="asm">${asmLines.join("")}</div>
 <script>
   (function () {
+    const vscode = acquireVsCodeApi();
     const searchInput = document.getElementById('searchInput');
     const filterMode = document.getElementById('filterMode');
     const matchCountEl = document.getElementById('matchCount');
     const lines = document.querySelectorAll('.line');
 
+    // Search / filter
     function applySearch() {
       const query = searchInput.value.toLowerCase();
       const isFilter = filterMode.checked;
@@ -309,6 +312,37 @@ function renderHtml(filename: string, asmLines: string[]): string {
 
     searchInput.addEventListener('input', applySearch);
     filterMode.addEventListener('change', applySearch);
+
+    // Hover over ASM line → highlight source
+    lines.forEach(function (line) {
+      const srcFile = line.getAttribute('data-src-file');
+      const srcLine = line.getAttribute('data-src-line');
+      if (!srcFile || !srcLine) { return; }
+      line.addEventListener('mouseenter', function () {
+        vscode.postMessage({ type: 'hover', srcFile: srcFile, srcLine: parseInt(srcLine, 10) });
+      });
+      line.addEventListener('mouseleave', function () {
+        vscode.postMessage({ type: 'hoverEnd' });
+      });
+    });
+
+    // Incoming highlight from extension (source cursor → highlight ASM lines)
+    window.addEventListener('message', function (event) {
+      const msg = event.data;
+      if (!msg || msg.type !== 'highlightLines') { return; }
+      const toHighlight = new Set(msg.lines);
+      lines.forEach(function (line) {
+        const idx = line.getAttribute('data-asm-line');
+        line.classList.toggle('asm-highlighted', idx !== null && toHighlight.has(parseInt(idx, 10)));
+      });
+      // Scroll first highlighted line into view
+      if (msg.lines && msg.lines.length > 0) {
+        const first = document.querySelector('.line.asm-highlighted');
+        if (first) {
+          first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+    });
   }());
 </script>
 </body>

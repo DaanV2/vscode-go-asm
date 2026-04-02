@@ -5,10 +5,13 @@ import { getFunctions } from "../go/dependencies";
 import { AssemblyBlock } from "./info";
 import { logger } from "../logger/logger";
 
-export async function getAsm(goUri: Uri): Promise<string> {
+export async function getAsm(
+  goUri: Uri,
+  env?: NodeJS.ProcessEnv
+): Promise<string> {
   logger.info("getting assembly", { uri: goUri.toString() });
 
-  const options: CommandOptions = {};
+  const options: CommandOptions = { env };
   const packageDir = goFSPath(packageUri(goUri));
   const ws = workspace.getWorkspaceFolder(goUri);
   if (ws) {

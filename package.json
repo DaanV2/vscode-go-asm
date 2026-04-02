@@ -35,6 +35,18 @@
         "command": "daanv2-go-asm.show-assembly",
         "title": "Show Go Assembly",
         "enablement": "editorLangId == 'go'"
+      },
+      {
+        "command": "daanv2-go-asm.select-goarch",
+        "title": "Go ASM: Select Target Architecture (GOARCH)"
+      },
+      {
+        "command": "daanv2-go-asm.select-goos",
+        "title": "Go ASM: Select Target Operating System (GOOS)"
+      },
+      {
+        "command": "daanv2-go-asm.select-goenv",
+        "title": "Go ASM: Configure Go Environment Variables"
       }
     ],
     "menus": {
