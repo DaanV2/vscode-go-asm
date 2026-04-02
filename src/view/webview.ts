@@ -193,9 +193,39 @@ function highlightLine(line: string): string {
     .replace(/(#.*$|\/\/.*$)/, '<span class="comment">$1</span>');
 }
 
-function getHtml(asm: string, filename: string, lineToSource: Map<number, SourceRef>) {
-  const processedLines = asm.split("\n").map((line, idx) => createAssemblyLine(line, idx, lineToSource));
+interface RenderBlock {
+  header: string;
+  lines: string[];
+}
 
+function getHtml(asm: string, filename: string, lineToSource: Map<number, SourceRef>) {
+  const rawLines = asm.split("\n");
+
+  // Group lines into collapsible blocks. Each block starts with a "# " line
+  // (as produced by printAssemblyInfo); "#\t" lines are metadata continuations.
+  const blocks: RenderBlock[] = [];
+  let currentBlock: RenderBlock | null = null;
+
+  rawLines.forEach((line, idx) => {
+    if (/^# /.test(line)) {
+      // New block header (e.g. "# \"main.Foo\"")
+      currentBlock = { header: line.slice(2).trim(), lines: [] };
+      blocks.push(currentBlock);
+    } else if (line.startsWith("#")) {
+      // Metadata continuation lines (e.g. "#\tSTEXT nosplit") – skip
+    } else if (currentBlock) {
+      currentBlock.lines.push(createAssemblyLine(line, idx, lineToSource));
+    }
+  });
+
+  const validBlocks = blocks.filter((b) => b.lines.length > 0);
+
+  if (validBlocks.length > 0) {
+    return renderHtml(filename, validBlocks);
+  }
+
+  // Fallback for error / "loading…" messages – render all lines flat
+  const processedLines = rawLines.map((line, idx) => createAssemblyLine(line, idx, lineToSource));
   return renderHtml(filename, processedLines);
 }
 
@@ -218,7 +248,25 @@ function createAssemblyLine(line: string, idx: number, lineToSource: Map<number,
   return `<span class="line"${dataAttrs}>${styledLine}</span>`;
 }
 
-function renderHtml(filename: string, asmLines: string[]): string {
+function renderHtml(filename: string, content: RenderBlock[] | string[]): string {
+  // Determine if we received blocks or flat lines
+  const isBlocks = content.length > 0 && typeof content[0] === "object" && content[0] !== null && "header" in content[0];
+
+  let bodyContent: string;
+  if (isBlocks) {
+    bodyContent = (content as RenderBlock[])
+      .map(
+        (block) => `
+<details class="asm-block" open>
+  <summary class="asm-block-header">${escapeHtml(block.header)}</summary>
+  <div class="asm-block-body">${block.lines.join("")}</div>
+</details>`,
+      )
+      .join("\n");
+  } else {
+    bodyContent = (content as string[]).join("");
+  }
+
   return `
 <html>
 <head>
@@ -229,11 +277,26 @@ function renderHtml(filename: string, asmLines: string[]): string {
   .reg { color: var(--vscode-symbolIcon-variableColor); }
   .comment { color: var(--vscode-descriptionForeground); font-style: italic; }
   .src { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 2px 4px; border-radius: 3px; }
-  .line { white-space: pre; min-height: 1em; padding: 0 10px; }
+  .line { white-space: pre; min-height: 1em; padding: 0 10px; display: block; }
   .line:hover { background-color: var(--vscode-editor-hoverHighlightBackground); }
   .line.asm-highlighted { background-color: var(--vscode-editor-findMatchHighlightBackground); border-left: 2px solid var(--vscode-editorLineNumber-activeForeground); }
   .line.match { background-color: var(--vscode-editor-findMatchHighlightBackground); }
   .line.no-match { display: none; }
+  .asm-block { border: 1px solid var(--vscode-panel-border, var(--vscode-editorGroup-border)); border-radius: 4px; margin: 6px 0; }
+  .asm-block-header {
+    cursor: pointer;
+    padding: 4px 10px;
+    font-weight: bold;
+    background: var(--vscode-sideBarSectionHeader-background, var(--vscode-editor-background));
+    color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-editor-foreground));
+    border-radius: 4px;
+    list-style: none;
+    user-select: none;
+  }
+  .asm-block-header::before { content: "\\25BC\\00A0"; font-size: 10px; opacity: 0.7; }
+  details.asm-block:not([open]) .asm-block-header::before { content: "\\25B6\\00A0"; }
+  .asm-block-header:hover { background: var(--vscode-list-hoverBackground); }
+  .asm-block-body { padding: 4px 0; }
   .search-bar {
     position: sticky;
     top: 0;
@@ -280,7 +343,7 @@ function renderHtml(filename: string, asmLines: string[]): string {
   <span id="matchCount"></span>
 </div>
 <h3>Go Assembly: ${escapeHtml(filename)}</h3>
-<div id="asm">${asmLines.join("")}</div>
+<div id="asm">${bodyContent}</div>
 <script>
   (function () {
     const vscode = acquireVsCodeApi();
@@ -303,6 +366,14 @@ function renderHtml(filename: string, asmLines: string[]): string {
         line.classList.toggle('no-match', isFilter && !matches && query.length > 0);
 
         if (matches && query.length > 0) { count++; }
+      });
+
+      // Auto-expand blocks that have matching lines; collapse blocks with no matches
+      document.querySelectorAll('.asm-block').forEach(function (block) {
+        if (!query) { return; }
+        const hasMatch = block.querySelector('.line.match') !== null;
+        if (hasMatch) { block.setAttribute('open', ''); }
+        else { block.removeAttribute('open'); }
       });
 
       matchCountEl.textContent = query
@@ -334,6 +405,12 @@ function renderHtml(filename: string, asmLines: string[]): string {
       lines.forEach(function (line) {
         const idx = line.getAttribute('data-asm-line');
         line.classList.toggle('asm-highlighted', idx !== null && toHighlight.has(parseInt(idx, 10)));
+      });
+      // Auto-expand blocks that contain highlighted lines
+      document.querySelectorAll('.asm-block').forEach(function (block) {
+        if (block.querySelector('.line.asm-highlighted') !== null) {
+          block.setAttribute('open', '');
+        }
       });
       // Scroll first highlighted line into view
       if (msg.lines && msg.lines.length > 0) {
