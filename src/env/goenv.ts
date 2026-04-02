@@ -8,6 +8,8 @@ export interface GoEnvConfig {
   GOAMD64?: string;
   GOMIPS?: string;
   GOFLAGS?: string;
+  GOEXPERIMENT?: string;
+  disableOptimizations?: boolean;
 }
 
 const STATE_KEY = "goenv";
@@ -92,6 +94,7 @@ export class GoEnvManager implements vscode.Disposable {
   private readonly state: vscode.Memento;
   private readonly goArchItem: vscode.StatusBarItem;
   private readonly goOSItem: vscode.StatusBarItem;
+  private readonly goOptimizationsItem: vscode.StatusBarItem;
 
   constructor(context: vscode.ExtensionContext) {
     this.state = context.workspaceState;
@@ -110,9 +113,18 @@ export class GoEnvManager implements vscode.Disposable {
     this.goOSItem.command = "daanv2-go-asm.select-goos";
     this.goOSItem.tooltip = "Select Go target operating system (GOOS)";
 
+    this.goOptimizationsItem = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Left,
+      8
+    );
+    this.goOptimizationsItem.command = "daanv2-go-asm.toggle-optimizations";
+    this.goOptimizationsItem.tooltip =
+      "Toggle Go compiler optimizations (affects -gcflags)";
+
     this.updateStatusBar();
     this.goArchItem.show();
     this.goOSItem.show();
+    this.goOptimizationsItem.show();
   }
 
   private getConfig(): GoEnvConfig {
@@ -128,6 +140,11 @@ export class GoEnvManager implements vscode.Disposable {
     const config = this.getConfig();
     this.goArchItem.text = `$(chip) ${config.GOARCH ?? "default"}`;
     this.goOSItem.text = `$(server-process) ${config.GOOS ?? "default"}`;
+    if (config.disableOptimizations) {
+      this.goOptimizationsItem.text = `$(debug-step-over) No Optimizations`;
+    } else {
+      this.goOptimizationsItem.text = `$(zap) Optimized`;
+    }
   }
 
   async selectGoArch(): Promise<void> {
@@ -257,6 +274,52 @@ export class GoEnvManager implements vscode.Disposable {
     logger.info("GOFLAGS set", { GOFLAGS: newConfig.GOFLAGS });
   }
 
+  async selectGoExperiment(): Promise<void> {
+    const config = this.getConfig();
+    const result = await vscode.window.showInputBox({
+      title: "Set GOEXPERIMENT",
+      prompt:
+        "Enter comma-separated experiment names to enable (leave empty to clear)",
+      value: config.GOEXPERIMENT ?? "",
+      placeHolder: "e.g., loopvar,rangefunc",
+    });
+    if (result === undefined) {
+      return;
+    }
+    const newConfig = { ...config };
+    if (result === "") {
+      delete newConfig.GOEXPERIMENT;
+    } else {
+      newConfig.GOEXPERIMENT = result;
+    }
+    await this.setConfig(newConfig);
+    logger.info("GOEXPERIMENT set", { GOEXPERIMENT: newConfig.GOEXPERIMENT });
+  }
+
+  async toggleOptimizations(): Promise<void> {
+    const config = this.getConfig();
+    const newConfig = {
+      ...config,
+      disableOptimizations: !config.disableOptimizations,
+    };
+    await this.setConfig(newConfig);
+    const state = newConfig.disableOptimizations
+      ? "disabled (showing unoptimized assembly)"
+      : "enabled (showing optimized assembly)";
+    logger.info("optimizations toggled", {
+      disableOptimizations: newConfig.disableOptimizations,
+    });
+    vscode.window.showInformationMessage(`Go compiler optimizations ${state}`);
+  }
+
+  /** Returns the -gcflags argument for go build based on the current optimizations setting. */
+  getGcFlags(): string {
+    const config = this.getConfig();
+    return config.disableOptimizations
+      ? "-gcflags=all=-S -N -l"
+      : "-gcflags=-S";
+  }
+
   /** Opens a two-step menu: first pick the variable, then pick its value. */
   async selectGoEnv(): Promise<void> {
     const config = this.getConfig();
@@ -291,6 +354,17 @@ export class GoEnvManager implements vscode.Disposable {
         description: config.GOFLAGS ?? "(none)",
         detail: "Default flags for go commands",
       },
+      {
+        label: "GOEXPERIMENT",
+        description: config.GOEXPERIMENT ?? "(none)",
+        detail: "Comma-separated list of compiler experiments to enable",
+      },
+      {
+        label: "Optimizations",
+        description: config.disableOptimizations ? "disabled" : "enabled",
+        detail:
+          "Toggle compiler optimizations (-gcflags=-S vs -gcflags=-S -N -l)",
+      },
     ];
 
     const selected = await vscode.window.showQuickPick(items, {
@@ -308,6 +382,8 @@ export class GoEnvManager implements vscode.Disposable {
       GOAMD64: () => this.selectGoAmd64(),
       GOMIPS: () => this.selectGoMips(),
       GOFLAGS: () => this.selectGoFlags(),
+      GOEXPERIMENT: () => this.selectGoExperiment(),
+      Optimizations: () => this.toggleOptimizations(),
     };
     await envSelectors[selected.label]?.();
   }
@@ -316,11 +392,18 @@ export class GoEnvManager implements vscode.Disposable {
   getEnvVars(): NodeJS.ProcessEnv {
     const config = this.getConfig();
     const env: NodeJS.ProcessEnv = {};
-    for (const [key, value] of Object.entries(config) as [
-      keyof GoEnvConfig,
-      string,
-    ][]) {
-      if (value) {
+    const envKeys: (keyof GoEnvConfig)[] = [
+      "GOARCH",
+      "GOOS",
+      "GOARM",
+      "GOAMD64",
+      "GOMIPS",
+      "GOFLAGS",
+      "GOEXPERIMENT",
+    ];
+    for (const key of envKeys) {
+      const value = config[key];
+      if (typeof value === "string" && value) {
         env[key] = value;
       }
     }
@@ -330,5 +413,6 @@ export class GoEnvManager implements vscode.Disposable {
   dispose(): void {
     this.goArchItem.dispose();
     this.goOSItem.dispose();
+    this.goOptimizationsItem.dispose();
   }
 }

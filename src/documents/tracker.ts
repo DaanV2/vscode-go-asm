@@ -40,4 +40,13 @@ export class DocumentTracker {
 
     return result;
   }
+
+  updateAll(): void {
+    const updates = Array.from(this._openFiles.values()).map((view) =>
+      view.update().catch((err) => {
+        logger.info("failed to update assembly view", { error: err });
+      })
+    );
+    Promise.allSettled(updates);
+  }
 }

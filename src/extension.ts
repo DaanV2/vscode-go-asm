@@ -50,6 +50,14 @@ function init(context: vscode.ExtensionContext) {
       "daanv2-go-asm.select-goenv",
       () => envManager.selectGoEnv()
     ),
+    vscode.commands.registerCommand(
+      "daanv2-go-asm.toggle-optimizations",
+      async () => {
+        await envManager.toggleOptimizations();
+        // Refresh all open assembly views
+        documentTracker.updateAll();
+      }
+    ),
     // Events
     vscode.workspace.onDidSaveTextDocument((e) => {
       if (!e.uri.fsPath.endsWith(".go")) {
