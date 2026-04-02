@@ -8,6 +8,7 @@ import {
   ViewColumn,
   WebviewPanel,
   window,
+  workspace,
 } from "vscode";
 import { getAsm } from "../assembly";
 import { filename } from "../format";
@@ -136,7 +137,30 @@ export class AssemblyView implements Disposable {
       }
     } else if (m["type"] === "hoverEnd") {
       this._clearSourceHighlight();
+    } else if (m["type"] === "export") {
+      const content = m["content"];
+      if (typeof content === "string") {
+        this._exportAssembly(content);
+      }
     }
+  }
+
+  private async _exportAssembly(content: string) {
+    const defaultUri = Uri.file(this.filename.replace(/\.go$/, ".s"));
+    const uri = await window.showSaveDialog({
+      defaultUri,
+      filters: {
+        "Assembly files": ["s"],
+        "Text files": ["txt"],
+        "All files": ["*"],
+      },
+      saveLabel: "Export Assembly",
+    });
+    if (!uri) {
+      return;
+    }
+    await workspace.fs.writeFile(uri, new TextEncoder().encode(content));
+    window.showInformationMessage(`Assembly exported to ${uri.fsPath}`);
   }
 
   private _highlightSourceLine(srcFile: string, srcLine: number) {
@@ -335,6 +359,18 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
     font-size: 13px;
     user-select: none;
   }
+  .search-bar button {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .search-bar button:hover { background: var(--vscode-button-hoverBackground); }
+  .search-bar button:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
   #matchCount { color: var(--vscode-descriptionForeground); font-size: 12px; }
   h3 { margin: 6px 0 2px 0; padding: 0 10px; }
   #asm { padding: 4px 0 10px 0; }
@@ -345,6 +381,7 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
   <input type="text" id="searchInput" placeholder="Search (opcode, register, comment\u2026)" autocomplete="off" spellcheck="false" />
   <label><input type="checkbox" id="filterMode" /> Filter lines</label>
   <span id="matchCount"></span>
+  <button id="exportBtn" title="Export visible assembly to a file">Export</button>
 </div>
 <h3>Go Assembly: ${escapeHtml(filename)}</h3>
 <div id="asm">${bodyContent}</div>
@@ -387,6 +424,20 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
 
     searchInput.addEventListener('input', applySearch);
     filterMode.addEventListener('change', applySearch);
+
+    // Export visible assembly lines
+    var exportBtn = document.getElementById('exportBtn');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', function () {
+        var visibleLines = [];
+        lines.forEach(function (line) {
+          if (!line.classList.contains('no-match')) {
+            visibleLines.push(line.textContent);
+          }
+        });
+        vscode.postMessage({ type: 'export', content: visibleLines.join('\n') });
+      });
+    }
 
     // Hover over ASM line → highlight source
     lines.forEach(function (line) {
