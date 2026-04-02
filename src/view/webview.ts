@@ -257,11 +257,18 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
   const isBlocks = content.length > 0 && typeof content[0] === "object" && content[0] !== null && "header" in content[0];
 
   let bodyContent: string;
+  let funcJumpHtml = "";
   if (isBlocks) {
-    bodyContent = (content as RenderBlock[])
+    const blocks = content as RenderBlock[];
+    funcJumpHtml =
+      `<select id="funcJump" class="func-jump" title="Jump to function">` +
+      `<option value="">Jump to function\u2026</option>` +
+      blocks.map((block, i) => `<option value="asm-block-${i}">${escapeHtml(block.header)}</option>`).join("") +
+      `</select>`;
+    bodyContent = blocks
       .map(
-        (block) => `
-<details class="asm-block" open>
+        (block, i) => `
+<details class="asm-block" open id="asm-block-${i}">
   <summary class="asm-block-header">${escapeHtml(block.header)}</summary>
   <div class="asm-block-body">${block.lines.join("")}</div>
 </details>`,
@@ -336,6 +343,19 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
     user-select: none;
   }
   #matchCount { color: var(--vscode-descriptionForeground); font-size: 12px; }
+  .func-jump {
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, transparent);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-family: monospace;
+    font-size: 13px;
+    max-width: 300px;
+    outline: none;
+    cursor: pointer;
+  }
+  .func-jump:focus { border-color: var(--vscode-focusBorder); }
   h3 { margin: 6px 0 2px 0; padding: 0 10px; }
   #asm { padding: 4px 0 10px 0; }
 </style>
@@ -345,6 +365,7 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
   <input type="text" id="searchInput" placeholder="Search (opcode, register, comment\u2026)" autocomplete="off" spellcheck="false" />
   <label><input type="checkbox" id="filterMode" /> Filter lines</label>
   <span id="matchCount"></span>
+  ${funcJumpHtml}
 </div>
 <h3>Go Assembly: ${escapeHtml(filename)}</h3>
 <div id="asm">${bodyContent}</div>
@@ -387,6 +408,21 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
 
     searchInput.addEventListener('input', applySearch);
     filterMode.addEventListener('change', applySearch);
+
+    // Jump-to-function dropdown
+    const funcJump = document.getElementById('funcJump');
+    if (funcJump) {
+      funcJump.addEventListener('change', function () {
+        const id = funcJump.value;
+        if (!id) { return; }
+        const block = document.getElementById(id);
+        if (block) {
+          block.setAttribute('open', '');
+          block.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        funcJump.value = '';
+      });
+    }
 
     // Hover over ASM line → highlight source
     lines.forEach(function (line) {
