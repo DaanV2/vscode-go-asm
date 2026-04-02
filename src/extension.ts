@@ -63,7 +63,7 @@ function init(context: vscode.ExtensionContext) {
       if (!e.uri.fsPath.endsWith(".go")) {
         return;
       }
-      logger.info("show assembly", { event: e });
+      logger.info("file saved, checking for assembly updates", { event: e });
 
       // Check if the package has been updated and requires a new compile
       const goPackage = packageUri(e.uri);

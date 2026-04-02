@@ -147,110 +147,63 @@ export class GoEnvManager implements vscode.Disposable {
     }
   }
 
-  async selectGoArch(): Promise<void> {
+  /** Shared helper: shows a QuickPick for a string-valued Go env variable and saves the selection. */
+  private async selectEnvVar(
+    key: "GOARCH" | "GOOS" | "GOARM" | "GOAMD64" | "GOMIPS",
+    values: EnvOption[],
+    options: { title: string; placeHolder: string }
+  ): Promise<void> {
     const config = this.getConfig();
     const result = await vscode.window.showQuickPick(
-      makeItems(GOARCH_VALUES, config.GOARCH),
-      { title: "Select GOARCH", placeHolder: "Choose target architecture" }
+      makeItems(values, config[key]),
+      options
     );
     if (result === undefined) {
       return;
     }
     const newConfig = { ...config };
     if (result.label === "default") {
-      delete newConfig.GOARCH;
+      delete newConfig[key];
     } else {
-      newConfig.GOARCH = result.label;
+      newConfig[key] = result.label;
     }
     await this.setConfig(newConfig);
-    logger.info("GOARCH set", { GOARCH: newConfig.GOARCH });
+    logger.info(`${key} set`, { [key]: newConfig[key] });
+  }
+
+  async selectGoArch(): Promise<void> {
+    return this.selectEnvVar("GOARCH", GOARCH_VALUES, {
+      title: "Select GOARCH",
+      placeHolder: "Choose target architecture",
+    });
   }
 
   async selectGoOS(): Promise<void> {
-    const config = this.getConfig();
-    const result = await vscode.window.showQuickPick(
-      makeItems(GOOS_VALUES, config.GOOS),
-      { title: "Select GOOS", placeHolder: "Choose target operating system" }
-    );
-    if (result === undefined) {
-      return;
-    }
-    const newConfig = { ...config };
-    if (result.label === "default") {
-      delete newConfig.GOOS;
-    } else {
-      newConfig.GOOS = result.label;
-    }
-    await this.setConfig(newConfig);
-    logger.info("GOOS set", { GOOS: newConfig.GOOS });
+    return this.selectEnvVar("GOOS", GOOS_VALUES, {
+      title: "Select GOOS",
+      placeHolder: "Choose target operating system",
+    });
   }
 
   async selectGoArm(): Promise<void> {
-    const config = this.getConfig();
-    const result = await vscode.window.showQuickPick(
-      makeItems(GOARM_VALUES, config.GOARM),
-      {
-        title: "Select GOARM",
-        placeHolder: "Choose ARM architecture version (used when GOARCH=arm)",
-      }
-    );
-    if (result === undefined) {
-      return;
-    }
-    const newConfig = { ...config };
-    if (result.label === "default") {
-      delete newConfig.GOARM;
-    } else {
-      newConfig.GOARM = result.label;
-    }
-    await this.setConfig(newConfig);
-    logger.info("GOARM set", { GOARM: newConfig.GOARM });
+    return this.selectEnvVar("GOARM", GOARM_VALUES, {
+      title: "Select GOARM",
+      placeHolder: "Choose ARM architecture version (used when GOARCH=arm)",
+    });
   }
 
   async selectGoAmd64(): Promise<void> {
-    const config = this.getConfig();
-    const result = await vscode.window.showQuickPick(
-      makeItems(GOAMD64_VALUES, config.GOAMD64),
-      {
-        title: "Select GOAMD64",
-        placeHolder:
-          "Choose AMD64 microarchitecture level (used when GOARCH=amd64)",
-      }
-    );
-    if (result === undefined) {
-      return;
-    }
-    const newConfig = { ...config };
-    if (result.label === "default") {
-      delete newConfig.GOAMD64;
-    } else {
-      newConfig.GOAMD64 = result.label;
-    }
-    await this.setConfig(newConfig);
-    logger.info("GOAMD64 set", { GOAMD64: newConfig.GOAMD64 });
+    return this.selectEnvVar("GOAMD64", GOAMD64_VALUES, {
+      title: "Select GOAMD64",
+      placeHolder: "Choose AMD64 microarchitecture level (used when GOARCH=amd64)",
+    });
   }
 
   async selectGoMips(): Promise<void> {
-    const config = this.getConfig();
-    const result = await vscode.window.showQuickPick(
-      makeItems(GOMIPS_VALUES, config.GOMIPS),
-      {
-        title: "Select GOMIPS",
-        placeHolder:
-          "Choose MIPS floating point mode (used when GOARCH=mips/mipsle)",
-      }
-    );
-    if (result === undefined) {
-      return;
-    }
-    const newConfig = { ...config };
-    if (result.label === "default") {
-      delete newConfig.GOMIPS;
-    } else {
-      newConfig.GOMIPS = result.label;
-    }
-    await this.setConfig(newConfig);
-    logger.info("GOMIPS set", { GOMIPS: newConfig.GOMIPS });
+    return this.selectEnvVar("GOMIPS", GOMIPS_VALUES, {
+      title: "Select GOMIPS",
+      placeHolder: "Choose MIPS floating point mode (used when GOARCH=mips/mipsle)",
+    });
   }
 
   async selectGoFlags(): Promise<void> {

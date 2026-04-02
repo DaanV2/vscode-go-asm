@@ -36,15 +36,15 @@ export async function executeCommand(
       env: { ...process.env, ...options?.env },
     });
 
-    let stdout = "";
-    let stderr = "";
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
 
-    cprocess.stdout.on("data", (data) => {
-      stdout += data.toString();
+    cprocess.stdout.on("data", (data: Buffer) => {
+      stdoutChunks.push(data);
     });
 
-    cprocess.stderr.on("data", (data) => {
-      stderr += data.toString();
+    cprocess.stderr.on("data", (data: Buffer) => {
+      stderrChunks.push(data);
     });
 
     cprocess.on("error", (err) => {
@@ -52,9 +52,13 @@ export async function executeCommand(
       reject(err);
     });
 
-    cprocess.on("close", (code) => {
+    cprocess.on("close", (code: number | null) => {
       logger.info("command done: " + infoCommand);
-      resolve({ stdout, stderr, code });
+      resolve({
+        stdout: Buffer.concat(stdoutChunks).toString(),
+        stderr: Buffer.concat(stderrChunks).toString(),
+        code,
+      });
     });
 
     // Handle cancellation

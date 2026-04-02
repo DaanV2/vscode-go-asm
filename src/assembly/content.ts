@@ -53,16 +53,16 @@ export async function getAsm(
     progress.report({ message: "parsing..." });
     let info = AssemblyBlock.parse(result.stderr);
 
-    // Filter only the function from the file
+    // Filter only the functions from the file, recording their declaration order.
     progress.report({ message: "filtering..." });
     const funcs = await getFunctions(goUri);
-    info = info.filter((i) => {
-      return funcs.some((f, index) => {
-        if (i.header.includes(f)) {
-          i.sortIndex = index;
-          return true;
-        }
-      });
+    info = info.flatMap((block) => {
+      const idx = funcs.findIndex((f) => block.header.includes(f));
+      if (idx === -1) {
+        return [];
+      }
+      block.sortIndex = idx;
+      return [block];
     });
 
     info.sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));

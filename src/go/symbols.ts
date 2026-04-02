@@ -29,7 +29,7 @@ export function parseFunctionSymbols(stdout: string): string[] {
   const result: string[] = [];
   for (const f of funcs) {
     result.push(f);
-    const n = f.replaceAll(/[\(\)\*]/gim, "");
+    const n = f.replaceAll(/[()*]/g, "");
     if (n !== f) {
       result.push(n);
     }
