@@ -7,7 +7,6 @@ import {
   ViewColumn,
   WebviewPanel,
   window,
-  workspace,
 } from "vscode";
 import { getAsm } from "../assembly";
 import { filename } from "../format";
@@ -17,12 +16,9 @@ import { createSourceMatchTarget } from "./sourceMatchTarget";
 import { matchesSourceFile, SourceFileMatchTarget } from "./sourceMatch";
 import { getHtml } from "./webviewHtml";
 
-function findSourceEditor(
-  srcFile: string,
-  sourceFileUri: Uri,
-) {
+function findSourceEditor(srcFile: string, sourceFileUri: Uri) {
   const primaryEditor = window.visibleTextEditors.find(
-    (e) => e.document.uri.fsPath === sourceFileUri.fsPath,
+    (e) => e.document.uri.toString() === sourceFileUri.toString(),
   );
 
   return window.visibleTextEditors.find(
@@ -60,11 +56,13 @@ export class AssemblyView implements Disposable {
       ViewColumn.Beside,
       { enableScripts: true },
     );
-    this.panel.webview.html = getHtml(
-      "loading...",
-      "",
-      new Map(),
-      this.sourceMatchTarget,
+    this.panel.webview.html = "loading...";
+    getHtml("loading...", "", new Map(), this.sourceMatchTarget).then(
+      (html) => {
+        if (this.panel.webview.html === "loading...") {
+          this.panel.webview.html = html;
+        }
+      },
     );
 
     // Handle messages from the webview (ASM hover → source highlight)
@@ -77,7 +75,7 @@ export class AssemblyView implements Disposable {
     // Handle cursor changes in source editor (source → ASM highlight)
     this._disposables.push(
       window.onDidChangeTextEditorSelection((e) => {
-        if (e.textEditor.document.uri.fsPath === this.fileUri.fsPath) {
+        if (e.textEditor.document.uri.toString() === this.fileUri.toString()) {
           this._syncFromSource(e.textEditor.selection.active.line + 1);
         }
       }),
@@ -103,21 +101,21 @@ export class AssemblyView implements Disposable {
       const asm = await getAsm(
         this.fileUri,
         this.envManager.getEnvVars(),
-        this.envManager.getGcFlags()
+        this.envManager.getGcFlags(),
       );
       const { lineToSource, sourceToLines } = buildLineMaps(
         asm,
         this.sourceMatchTarget,
       );
       this._sourceToLines = sourceToLines;
-      this.panel.webview.html = getHtml(
+      this.panel.webview.html = await getHtml(
         asm,
         this.filename,
         lineToSource,
         this.sourceMatchTarget,
       );
     } catch (err: any) {
-      this.panel.webview.html = getHtml(
+      this.panel.webview.html = await getHtml(
         `got an error: ${JSON.stringify({ ...err }, undefined, 2)}`,
         this.filename,
         new Map(),
@@ -139,30 +137,7 @@ export class AssemblyView implements Disposable {
       }
     } else if (m["type"] === "hoverEnd") {
       this._clearSourceHighlight();
-    } else if (m["type"] === "export") {
-      const content = m["content"];
-      if (typeof content === "string") {
-        this._exportAssembly(content);
-      }
     }
-  }
-
-  private async _exportAssembly(content: string) {
-    const defaultUri = Uri.file(this.filename.replace(/\.go$/, ".s"));
-    const uri = await window.showSaveDialog({
-      defaultUri,
-      filters: {
-        "Assembly files": ["s"],
-        "Text files": ["txt"],
-        "All files": ["*"],
-      },
-      saveLabel: "Export Assembly",
-    });
-    if (!uri) {
-      return;
-    }
-    await workspace.fs.writeFile(uri, new TextEncoder().encode(content));
-    window.showInformationMessage(`Assembly exported to ${uri.fsPath}`);
   }
 
   private _highlightSourceLine(srcFile: string, srcLine: number) {

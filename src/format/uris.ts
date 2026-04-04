@@ -1,4 +1,3 @@
-import path from "path";
 import { Uri } from "vscode";
 
 export function goFSPath(uri: Uri | string): string {
@@ -16,5 +15,5 @@ export function packageUri(uri: Uri): Uri {
 }
 
 export function filename(uri: Uri): string {
-  return path.basename(uri.fsPath);
+  return uri.path.split("/").pop() ?? "";
 }

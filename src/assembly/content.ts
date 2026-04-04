@@ -3,12 +3,13 @@ import { CommandOptions, executeCommand } from "../commands/commands";
 import { goFSPath, packageUri } from "../format";
 import { getFunctions } from "../go/dependencies";
 import { AssemblyBlock } from "./info";
+import { prioritizeAssemblyBlocks } from "./order";
 import { logger } from "../logger/logger";
 
 export async function getAsm(
   goUri: Uri,
   env?: NodeJS.ProcessEnv,
-  gcflags?: string
+  gcflags?: string,
 ): Promise<string> {
   logger.info("getting assembly", { uri: goUri.toString() });
 
@@ -28,6 +29,7 @@ export async function getAsm(
   const popts = {
     location: ProgressLocation.Window,
     cancellable: true,
+    
     title: "compiling go for assembly",
   };
   const info = await window.withProgress(popts, async (progress, token) => {
@@ -37,7 +39,7 @@ export async function getAsm(
       "go",
       ["build", gcflags ?? "-gcflags=-S", packageDir],
       options,
-      token
+      token,
     );
 
     if ((result.code ?? 0) > 0) {
@@ -53,19 +55,10 @@ export async function getAsm(
     progress.report({ message: "parsing..." });
     let info = AssemblyBlock.parse(result.stderr);
 
-    // Filter only the functions from the file, recording their declaration order.
+    // Keep package assembly available so the view can reveal other-file code.
     progress.report({ message: "filtering..." });
     const funcs = await getFunctions(goUri);
-    info = info.flatMap((block) => {
-      const idx = funcs.findIndex((f) => block.header.includes(f));
-      if (idx === -1) {
-        return [];
-      }
-      block.sortIndex = idx;
-      return [block];
-    });
-
-    info.sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
+    info = prioritizeAssemblyBlocks(info, funcs);
 
     // Done
     progress.report({ message: "done" });
@@ -86,7 +79,6 @@ function printAssemblyInfo(packageDir: string, cwd: string | undefined) {
 
   return function (asm: AssemblyBlock): string {
     const header = asm.header.replaceAll(" ", "\n#\t");
-
     let lines = asm.data.map((e) => e.replaceAll(packageDir, ""));
 
     if (cwd) {

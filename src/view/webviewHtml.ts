@@ -1,5 +1,7 @@
+import { logger } from "../logger/logger";
 import { SourceRef } from "./lineMaps";
 import { SourceFileMatchTarget, matchesSourceFile } from "./sourceMatch";
+import { ProgressLocation, window } from "vscode";
 
 interface RenderBlock {
   header: string;
@@ -16,11 +18,12 @@ function escapeHtml(text: string): string {
 
 function syntaxHighlight(escaped: string): string {
   return escaped
-    .replace(/(0x[0-9a-f]+)/g, '<span class="addr">$1</span>')
+    .replace(/(0x[0-9a-fA-F]+)/g, '<span class="addr">$1</span>')
     .replace(
-      /\b(AX|AL|BX|CX|DX|SI|DI|R[0-9]+|SP|SB|BP)\b/g,
+      /\b(AX|AL|BX|BL|CX|CL|DX|DL|SI|DI|R[0-9]+|SP|SB|BP|FP|PC|TLS)\b/g,
       '<span class="reg">$1</span>',
     )
+    .replace(/(\$-?\d+)/g, '<span class="imm">$1</span>')
     .replace(/\b([A-Z]{3,})\b/g, '<span class="op">$1</span>')
     .replace(/\(([^)]+\.go:\d+)\)/g, '<span class="src">($1)</span>')
     .replace(/(#.*$|\/\/.*$)/g, '<span class="comment">$1</span>');
@@ -94,7 +97,10 @@ function renderBodyContent(content: RenderBlock[] | string[]): string {
     .join("\n");
 }
 
-function renderHtml(filename: string, content: RenderBlock[] | string[]): string {
+function renderHtml(
+  filename: string,
+  content: RenderBlock[] | string[],
+): string {
   const bodyContent = renderBodyContent(content);
 
   return `
@@ -103,8 +109,9 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
 <style>
   body { font-family: var(--vscode-editor-font-family, monospace); background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); padding: 10px; }
   .addr { color: var(--vscode-editorLineNumber-foreground); }
-  .op { color: var(--vscode-symbolIcon-keywordColor); }
-  .reg { color: var(--vscode-symbolIcon-variableColor); }
+  .op { color: var(--vscode-symbolIcon-keywordForeground); }
+  .reg { color: var(--vscode-symbolIcon-variableForeground); }
+  .imm { color: var(--vscode-symbolIcon-numberForeground); }
   .comment { color: var(--vscode-descriptionForeground); font-style: italic; }
   .src { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 2px 4px; border-radius: 3px; }
   .line { white-space: pre; min-height: 1em; padding: 0 10px; display: block; }
@@ -162,18 +169,6 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
     font-size: 13px;
     user-select: none;
   }
-  .search-bar button {
-    background: var(--vscode-button-background);
-    color: var(--vscode-button-foreground);
-    border: none;
-    border-radius: 4px;
-    padding: 4px 12px;
-    font-size: 13px;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .search-bar button:hover { background: var(--vscode-button-hoverBackground); }
-  .search-bar button:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
   #matchCount { color: var(--vscode-descriptionForeground); font-size: 12px; }
   h3 { margin: 6px 0 2px 0; padding: 0 10px; }
   #asm { padding: 4px 0 10px 0; }
@@ -185,7 +180,6 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
   <label><input type="checkbox" id="filterMode" /> Filter lines</label>
   <label><input type="checkbox" id="sourceOnly" checked /> Source file only</label>
   <span id="matchCount"></span>
-  <button id="exportBtn" title="Export visible assembly to a file">Export</button>
 </div>
 <h3>Go Assembly: ${escapeHtml(filename)}</h3>
 <div id="asm">${bodyContent}</div>
@@ -242,20 +236,6 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
     sourceOnly.addEventListener('change', applySearch);
     applySearch();
 
-    // Export visible assembly lines
-    var exportBtn = document.getElementById('exportBtn');
-    if (exportBtn) {
-      exportBtn.addEventListener('click', function () {
-        var visibleLines = [];
-        lines.forEach(function (line) {
-          if (!line.classList.contains('no-match')) {
-            visibleLines.push(line.textContent);
-          }
-        });
-        vscode.postMessage({ type: 'export', content: visibleLines.join('\n') });
-      });
-    }
-
     // Hover over ASM line -> highlight source
     lines.forEach(function (line) {
       const srcFile = line.getAttribute('data-src-file');
@@ -299,25 +279,38 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
 `;
 }
 
-export function getHtml(
+export async function getHtml(
   asm: string,
   filename: string,
   lineToSource: Map<number, SourceRef>,
   sourceMatchTarget: SourceFileMatchTarget,
 ) {
-  const rawLines = asm.split("\n");
-  const validBlocks = parseRenderBlocks(
-    rawLines,
-    lineToSource,
-    sourceMatchTarget,
-  );
+  const popts = {
+    location: ProgressLocation.Window,
+    cancellable: true,
+    title: "Generating assembly view...",
+  };
 
-  if (validBlocks.length > 0) {
-    return renderHtml(filename, validBlocks);
-  }
+  return window.withProgress(popts, async (progress, token) => {
+    const start = performance.now();
+    const rawLines = asm.split("\n");
+    const validBlocks = parseRenderBlocks(
+      rawLines,
+      lineToSource,
+      sourceMatchTarget,
+    );
 
-  const processedLines = rawLines.map((line, idx) =>
-    createAssemblyLine(line, idx, lineToSource, sourceMatchTarget),
-  );
-  return renderHtml(filename, processedLines);
+    if (validBlocks.length > 0) {
+      logger.info(
+        `Parsed assembly into ${validBlocks.length} blocks in ${(performance.now() - start).toFixed(2)}ms`,
+      );
+
+      return renderHtml(filename, validBlocks);
+    }
+
+    const processedLines = rawLines.map((line, idx) =>
+      createAssemblyLine(line, idx, lineToSource, sourceMatchTarget),
+    );
+    return renderHtml(filename, processedLines);
+  });
 }

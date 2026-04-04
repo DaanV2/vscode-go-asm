@@ -33,7 +33,7 @@ export class DocumentTracker {
     const result: [Uri, AssemblyView][] = [];
 
     for (const entry of this._openFiles.entries()) {
-      if (entry[0].fsPath.includes(packageUri.fsPath)) {
+      if (entry[0].path.startsWith(packageUri.path)) {
         result.push(entry);
       }
     }

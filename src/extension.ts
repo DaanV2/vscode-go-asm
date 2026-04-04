@@ -60,7 +60,7 @@ function init(context: vscode.ExtensionContext) {
     ),
     // Events
     vscode.workspace.onDidSaveTextDocument((e) => {
-      if (!e.uri.fsPath.endsWith(".go")) {
+      if (!e.uri.path.endsWith(".go")) {
         return;
       }
       logger.info("file saved, checking for assembly updates", { event: e });
