@@ -11,10 +11,10 @@ import {
 import { getAsm } from "../assembly";
 import { filename } from "../format";
 import { GoEnvManager } from "../env";
-import { buildLineMaps } from "./lineMaps";
+import { processAssembly } from "./lineMaps";
 import { createSourceMatchTarget } from "./sourceMatchTarget";
 import { matchesSourceFile, SourceFileMatchTarget } from "./sourceMatch";
-import { getHtml } from "./webviewHtml";
+import { getShellHtml } from "./webviewHtml";
 
 function findSourceEditor(srcFile: string, sourceFileUri: Uri) {
   const primaryEditor = window.visibleTextEditors.find(
@@ -39,7 +39,7 @@ export class AssemblyView implements Disposable {
   private _sourceToLines: Map<number, number[]> = new Map();
   private _disposables: Disposable[] = [];
 
-  constructor(uri: Uri, envManager: GoEnvManager) {
+  constructor(uri: Uri, envManager: GoEnvManager, extensionUri: Uri) {
     this.fileUri = uri;
     this.filename = filename(uri);
     this.envManager = envManager;
@@ -54,16 +54,15 @@ export class AssemblyView implements Disposable {
       "goAsmViewer",
       "Go Assembly View: " + this.filename,
       ViewColumn.Beside,
-      { enableScripts: true },
-    );
-    this.panel.webview.html = "loading...";
-    getHtml("loading...", "", new Map(), this.sourceMatchTarget).then(
-      (html) => {
-        if (this.panel.webview.html === "loading...") {
-          this.panel.webview.html = html;
-        }
+      {
+        enableScripts: true,
+        localResourceRoots: [Uri.joinPath(extensionUri, "resources")],
       },
     );
+
+    const sqlJsUri  = this.panel.webview.asWebviewUri(Uri.joinPath(extensionUri, "resources", "sql-wasm.js"));
+    const sqlWasmUri = this.panel.webview.asWebviewUri(Uri.joinPath(extensionUri, "resources", "sql-wasm.wasm"));
+    this.panel.webview.html = getShellHtml(this.filename, sqlJsUri.toString(), sqlWasmUri.toString());
 
     // Handle messages from the webview (ASM hover → source highlight)
     this._disposables.push(
@@ -103,24 +102,13 @@ export class AssemblyView implements Disposable {
         this.envManager.getEnvVars(),
         this.envManager.getGcFlags(),
       );
-      const { lineToSource, sourceToLines } = buildLineMaps(
-        asm,
-        this.sourceMatchTarget,
-      );
+      const { rows, sourceToLines } = processAssembly(asm, this.sourceMatchTarget);
       this._sourceToLines = sourceToLines;
-      this.panel.webview.html = await getHtml(
-        asm,
-        this.filename,
-        lineToSource,
-        this.sourceMatchTarget,
-      );
+      this.panel.webview.postMessage({ type: "rows", rows });
     } catch (err: any) {
-      this.panel.webview.html = await getHtml(
-        `got an error: ${JSON.stringify({ ...err }, undefined, 2)}`,
-        this.filename,
-        new Map(),
-        this.sourceMatchTarget,
-      );
+      const errorText = `got an error:\n${JSON.stringify({ ...err }, undefined, 2)}`;
+      const { rows } = processAssembly(errorText, this.sourceMatchTarget);
+      this.panel.webview.postMessage({ type: "rows", rows });
     }
   }
 

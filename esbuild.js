@@ -1,7 +1,17 @@
 const esbuild = require("esbuild");
+const fs = require("fs");
+const path = require("path");
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
+
+function copySqlJsAssets() {
+	const distDir = path.join(__dirname, "node_modules", "sql.js", "dist");
+	const resourcesDir = path.join(__dirname, "resources");
+	for (const file of ["sql-wasm.js", "sql-wasm.wasm"]) {
+		fs.copyFileSync(path.join(distDir, file), path.join(resourcesDir, file));
+	}
+}
 
 /**
  * @type {import('esbuild').Plugin}
@@ -48,6 +58,7 @@ async function main() {
 		await ctx.rebuild();
 		await ctx.dispose();
 	}
+	copySqlJsAssets();
 }
 
 main().catch(e => {

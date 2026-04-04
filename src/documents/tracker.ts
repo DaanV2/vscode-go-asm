@@ -1,4 +1,4 @@
-import { Uri, Webview, Disposable } from "vscode";
+import { Uri, Disposable } from "vscode";
 import { AssemblyView } from "../view/webview";
 import { logger } from "../logger/logger";
 import { GoEnvManager } from "../env";
@@ -6,16 +6,18 @@ import { GoEnvManager } from "../env";
 export class DocumentTracker {
   private _openFiles: Map<Uri, AssemblyView>;
   private readonly envManager: GoEnvManager;
+  private readonly extensionUri: Uri;
 
-  constructor(envManager: GoEnvManager) {
+  constructor(envManager: GoEnvManager, extensionUri: Uri) {
     this._openFiles = new Map();
     this.envManager = envManager;
+    this.extensionUri = extensionUri;
   }
 
   displayFile(uri: Uri) {
     logger.info("displaying file", { uri });
 
-    const view = new AssemblyView(uri, this.envManager);
+    const view = new AssemblyView(uri, this.envManager, this.extensionUri);
     this._openFiles.set(uri, view);
 
     // Subscribe on closing

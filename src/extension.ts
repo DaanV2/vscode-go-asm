@@ -21,7 +21,7 @@ export function activate(context: vscode.ExtensionContext) {
 function init(context: vscode.ExtensionContext) {
   logger.info("initializing Go Asm Preview");
   const envManager = new GoEnvManager(context);
-  const documentTracker = new DocumentTracker(envManager);
+  const documentTracker = new DocumentTracker(envManager, context.extensionUri);
 
   return [
     envManager,
