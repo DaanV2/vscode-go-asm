@@ -61,6 +61,9 @@ describe("buildLineMaps", () => {
     assert.deepStrictEqual(lineToSource.get(1), { srcFile: "./pkg/foo.go", srcLine: 11 });
     assert.deepStrictEqual(lineToSource.get(2), { srcFile: "./pkg/foo.go", srcLine: 12 });
     assert.deepStrictEqual(lineToSource.get(3), { srcFile: "./pkg/foo.go", srcLine: 13 });
+    assert.deepStrictEqual(sourceToLines.get(10), [0]);
+    assert.deepStrictEqual(sourceToLines.get(11), [1]);
     assert.deepStrictEqual(sourceToLines.get(12), [2]);
+    assert.deepStrictEqual(sourceToLines.get(13), [3]);
   });
 });
