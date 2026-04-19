@@ -81,12 +81,17 @@ function convertToRenderBlocks(
   lineToSource: Map<number, SourceRef>,
   sourceMatchTarget: SourceFileMatchTarget,
 ): RenderBlock[] {
-  return rawBlocks.map((block) => ({
-    header: block.header,
-    lines: block.data.map((line, idx) =>
-      createAssemblyLine(line, idx, lineToSource, sourceMatchTarget),
-    ),
-  }));
+  let offset = 0;
+  return rawBlocks.map((block) => {
+    const blockOffset = offset;
+    offset += block.data.length;
+    return {
+      header: block.header,
+      lines: block.data.map((line, idx) =>
+        createAssemblyLine(line, idx + blockOffset, lineToSource, sourceMatchTarget),
+      ),
+    };
+  });
 }
 
 function renderBodyContent(content: RenderBlock[] | string[]): string {

@@ -18,7 +18,7 @@ describe("buildLineMaps", () => {
     assert.deepStrictEqual(lineToSource.get(2), { srcFile: "./pkg/bar.go", srcLine: 20 });
 
     assert.deepStrictEqual(sourceToLines.get(10), [0, 1]);
-    assert.strictEqual(sourceToLines.has(20), false);
+    assert.deepStrictEqual(sourceToLines.get(20), [2]);
   });
 
   it("ignores lines without source annotations", () => {

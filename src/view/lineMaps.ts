@@ -27,6 +27,8 @@ export function extractLineInfo(
   lines: string[],
   lineToSource: Map<number, SourceRef>,
   sourceToLines: Map<number, number[]>,
+  offset: number = 0,
+  sourceFilter?: (file: string) => boolean,
 ) {
   lines.forEach((line, idx) => {
     const match = line.match(/\(([^)]+\.go):(\d+)\)/);
@@ -36,8 +38,11 @@ export function extractLineInfo(
 
     const file = match[1];
     const srcLine = parseInt(match[2], 10);
-    lineToSource.set(idx, { srcFile: file, srcLine });
+    const absIdx = idx + offset;
+    lineToSource.set(absIdx, { srcFile: file, srcLine });
 
-    addSourceLineMapping(sourceToLines, srcLine, idx);
+    if (!sourceFilter || sourceFilter(file)) {
+      addSourceLineMapping(sourceToLines, srcLine, absIdx);
+    }
   });
 }

@@ -10,9 +10,11 @@ import {
   window,
 } from "vscode";
 import { AssemblyBlock, streamAsm } from "../assembly";
+import { prioritizeAssemblyBlocks } from "../assembly/order";
 import { AssemblyContainer } from "../assembly/container";
 import { GoEnvManager } from "../env";
 import { filename } from "../format";
+import { getFunctions } from "../go/dependencies";
 import { matchesSourceFile, SourceFileMatchTarget } from "./sourceMatch";
 import { createSourceMatchTarget } from "./sourceMatchTarget";
 import { getHtml, getHtmlAssembly } from "./webviewHtml";
@@ -143,7 +145,11 @@ export class AssemblyView implements Disposable {
    * Should be called after updating the assembly container with new blocks. */
   async updateView() {
     try {
-      let b = this._asmContainer.blocks;
+      const funcs = await getFunctions(this.fileUri);
+      const prioritized = prioritizeAssemblyBlocks(this._asmContainer.blocks, funcs);
+      this._asmContainer.rebuildMaps(prioritized, (file) => matchesSourceFile(file, this.sourceMatchTarget));
+
+      let b = prioritized;
       if (b.length > 1000) {
         b = b.slice(0, 1000);
       }
@@ -164,8 +170,6 @@ export class AssemblyView implements Disposable {
     }
   }
 
-  // Handles messages received from the webview
-  // such as hover events for syncing highlights between the assembly and source code.
   private _handleWebviewMessage(msg: unknown) {
     if (!msg || typeof msg !== "object") {
       return;
