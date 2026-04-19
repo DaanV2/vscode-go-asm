@@ -5,15 +5,14 @@ interface CacheContainer<T> {
 export namespace Cache {
   // A simple utility to cache the result of a function that takes a single string key.
   export function getOrCreate<T>(
-    key: string,
     container: CacheContainer<T>,
-    createFn: (key: string) => T,
+    createFn: () => T,
   ): T {
-    if (container.__cache__) {
+    if (container.__cache__ !== undefined && container.__cache__ !== null) {
       return container.__cache__;
     }
 
-    const value = createFn(key);
+    const value = createFn();
     container.__cache__ = value;
     return value;
   }

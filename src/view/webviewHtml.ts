@@ -127,11 +127,11 @@ function renderHtml(
 <head>
 <style>
   body { font-family: var(--vscode-editor-font-family, monospace); background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); padding: 10px; }
-  .addr { color: var(--vscode-editorLineNumber-foreground); }
-  .op { color: var(--vscode-symbolIcon-keywordForeground); }
-  .reg { color: var(--vscode-symbolIcon-variableForeground); }
-  .imm { color: var(--vscode-symbolIcon-numberForeground); }
-  .comment { color: var(--vscode-descriptionForeground); font-style: italic; }
+  .addr { color: var(--vscode-textPreformat-foreground, #d7ba7d); }
+  .op { color: var(--vscode-debugTokenExpression-name, #c586c0); }
+  .reg { color: var(--vscode-debugTokenExpression-type, #4a90e2); }
+  .imm { color: var(--vscode-debugTokenExpression-number, #b5cea8); }
+  .comment { color: var(--vscode-descriptionForeground, rgba(204,204,204,0.7)); font-style: italic; }
   .src { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 2px 4px; border-radius: 3px; }
   .line { white-space: pre; min-height: 1em; padding: 0 10px; display: block; }
   .line:hover { background-color: var(--vscode-editor-hoverHighlightBackground); }

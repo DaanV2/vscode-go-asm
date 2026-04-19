@@ -10,8 +10,8 @@ import {
   window,
 } from "vscode";
 import { AssemblyBlock, streamAsm } from "../assembly";
-import { prioritizeAssemblyBlocks } from "../assembly/order";
 import { AssemblyContainer } from "../assembly/container";
+import { prioritizeAssemblyBlocks } from "../assembly/order";
 import { GoEnvManager } from "../env";
 import { filename } from "../format";
 import { getFunctions } from "../go/dependencies";

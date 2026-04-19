@@ -4,11 +4,11 @@ import {
   executeCommand,
   streamExecuteCommand,
 } from "../commands/commands";
-import { goFSPath, packageUri } from "../format";
+import { goFSPath, packageUri, relativizeAsmLine } from "../format";
 import { getFunctions } from "../go/dependencies";
+import { logger } from "../logger/logger";
 import { AssemblyBlock } from "./info";
 import { prioritizeAssemblyBlocks } from "./order";
-import { logger } from "../logger/logger";
 
 export async function getAsm(
   goUri: Uri,
@@ -69,7 +69,7 @@ export async function streamAsm(
   logger.info("getting assembly", { uri: goUri.toString() });
   const options = commandsOptions(goUri, env);
   const cmmArgs = commandArgs(goUri, gcflags);
-  const handler = new goStreamHandler(asmCallback);
+  const handler = new goStreamHandler(asmCallback, options.cwd);
 
   const popts = {
     location: ProgressLocation.Window,
@@ -129,7 +129,10 @@ function commandArgs(goUri: Uri, gcflags?: string) {
 class goStreamHandler {
   private _data: string;
 
-  constructor(public asmCallback: (ab: AssemblyBlock) => void) {
+  constructor(
+    public asmCallback: (ab: AssemblyBlock) => void,
+    private _workspaceDir?: string,
+  ) {
     this._data = "";
   }
 
@@ -141,7 +144,14 @@ class goStreamHandler {
       const text = this._data.slice(0, offset);
       this._data = this._data.slice(offset);
       const blocks = AssemblyBlock.parse(text);
-      blocks.forEach(this.asmCallback);
+      blocks.forEach((block) => {
+        if (this._workspaceDir) {
+          block.data = block.data.map((line) =>
+            relativizeAsmLine(line, this._workspaceDir!),
+          );
+        }
+        this.asmCallback(block);
+      });
     }
   }
 
@@ -162,7 +172,7 @@ function printAssemblyInfo(packageDir: string, cwd: string | undefined) {
     let lines = asm.data.map((e) => e.replaceAll(packageDir, ""));
 
     if (cwd) {
-      lines = lines.map((e) => e.replaceAll(cwd, "."));
+      lines = lines.map((e) => relativizeAsmLine(e, cwd!));
     }
 
     return `# ${header}\n${lines.join("\n")}\n`;
