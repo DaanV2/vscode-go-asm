@@ -69,7 +69,7 @@ export async function streamAsm(
   logger.info("getting assembly", { uri: goUri.toString() });
   const options = commandsOptions(goUri, env);
   const cmmArgs = commandArgs(goUri, gcflags);
-  const handler = new goStreamHandler(asmCallback, options.cwd);
+  const handler = new GoStreamHandler(asmCallback, options.cwd);
 
   const popts = {
     location: ProgressLocation.Window,
@@ -126,7 +126,7 @@ function commandArgs(goUri: Uri, gcflags?: string) {
   return ["build", gcflags ?? "-gcflags=-S", packageDir];
 }
 
-class goStreamHandler {
+class GoStreamHandler {
   private _data: string;
 
   constructor(

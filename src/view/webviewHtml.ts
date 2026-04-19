@@ -88,7 +88,12 @@ function convertToRenderBlocks(
     return {
       header: block.header,
       lines: block.data.map((line, idx) =>
-        createAssemblyLine(line, idx + blockOffset, lineToSource, sourceMatchTarget),
+        createAssemblyLine(
+          line,
+          idx + blockOffset,
+          lineToSource,
+          sourceMatchTarget,
+        ),
       ),
     };
   });
@@ -304,7 +309,12 @@ export async function getHtml(
   lineToSource: Map<number, SourceRef>,
   sourceMatchTarget: SourceFileMatchTarget,
 ) {
-  return getHtmlLines(asm.split("\n"), filename, lineToSource, sourceMatchTarget);
+  return getHtmlLines(
+    asm.split("\n"),
+    filename,
+    lineToSource,
+    sourceMatchTarget,
+  );
 }
 
 export async function getHtmlLines(
@@ -315,11 +325,11 @@ export async function getHtmlLines(
 ) {
   const popts = {
     location: ProgressLocation.Window,
-    cancellable: true,
+    cancellable: false,
     title: "Generating assembly view...",
   };
 
-  return window.withProgress(popts, async (progress, token) => {
+  return window.withProgress(popts, async () => {
     const start = performance.now();
     const validBlocks = parseRenderBlocks(
       rawLines,
@@ -350,7 +360,7 @@ export async function getHtmlAssembly(
 ) {
   const popts = {
     location: ProgressLocation.Window,
-    cancellable: true,
+    cancellable: false,
     title: "Generating assembly view...",
   };
 

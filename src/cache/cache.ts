@@ -3,7 +3,7 @@ interface CacheContainer<T> {
 }
 
 export namespace Cache {
-  // A simple utility to cache the result of a function that takes a single string key.
+  // A simple utility to cache the result of a function that takes uses an object instance as the storage.
   export function getOrCreate<T>(
     container: CacheContainer<T>,
     createFn: () => T,
