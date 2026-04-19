@@ -1,5 +1,3 @@
-import path from "path";
-
 export interface SourceFileMatchTarget {
   absolute: string;
   relative?: string;
@@ -9,6 +7,7 @@ export interface SourceFileMatchTarget {
 export function normalizePathForCompare(file: string): string {
   return file
     .replace(/\\/g, "/")
+    .replace(/^[a-z]:/i, "")
     .replace(/^\.\//, "")
     .replace(/^\/+/, "")
     .toLowerCase();
@@ -19,22 +18,28 @@ export function matchesSourceFile(
   target: SourceFileMatchTarget,
 ): boolean {
   const source = normalizePathForCompare(sourceFile);
+  const absolute = normalizePathForCompare(target.absolute);
+  const relative = target.relative
+    ? normalizePathForCompare(target.relative)
+    : undefined;
+  const basename = normalizePathForCompare(target.basename);
+
   if (!source) {
     return false;
   }
 
-  if (source === target.absolute || target.absolute.endsWith("/" + source)) {
+  if (source === absolute || absolute.endsWith("/" + source)) {
     return true;
   }
 
   if (
-    target.relative &&
-    (source === target.relative ||
-      source.endsWith("/" + target.relative) ||
-      target.relative.endsWith("/" + source))
+    relative &&
+    (source === relative ||
+      source.endsWith("/" + relative) ||
+      relative.endsWith("/" + source))
   ) {
     return true;
   }
 
-  return path.posix.basename(source) === target.basename;
+  return (source.split("/").pop() ?? "") === basename;
 }

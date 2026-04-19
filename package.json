@@ -78,7 +78,7 @@
     "test": "npm run compile-tests && node --test --test-reporter=spec out/test/**/*.test.js"
   },
   "devDependencies": {
-    "@types/node": "22.x",
+    "@types/node": "^22.19.17",
     "@types/vscode": "^1.103.0",
     "@typescript-eslint/eslint-plugin": "^8.39.0",
     "@typescript-eslint/parser": "^8.39.0",

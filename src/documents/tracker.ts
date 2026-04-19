@@ -1,7 +1,7 @@
-import { Uri, Webview, Disposable } from "vscode";
-import { AssemblyView } from "../view/webview";
-import { logger } from "../logger/logger";
+import { Disposable, Uri } from "vscode";
 import { GoEnvManager } from "../env";
+import { logger } from "../logger/logger";
+import { AssemblyView } from "../view/webview";
 
 export class DocumentTracker {
   private _openFiles: Map<Uri, AssemblyView>;
@@ -33,7 +33,7 @@ export class DocumentTracker {
     const result: [Uri, AssemblyView][] = [];
 
     for (const entry of this._openFiles.entries()) {
-      if (entry[0].fsPath.includes(packageUri.fsPath)) {
+      if (entry[0].path.startsWith(packageUri.path)) {
         result.push(entry);
       }
     }

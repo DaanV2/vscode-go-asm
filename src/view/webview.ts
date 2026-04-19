@@ -1,5 +1,6 @@
 import {
   Disposable,
+  TextEditor,
   TextEditorDecorationType,
   TextEditorRevealType,
   ThemeColor,
@@ -7,22 +8,29 @@ import {
   ViewColumn,
   WebviewPanel,
   window,
-  workspace,
 } from "vscode";
-import { getAsm } from "../assembly";
-import { filename } from "../format";
+import { AssemblyBlock, streamAsm } from "../assembly";
+import { AssemblyContainer } from "../assembly/container";
+import { prioritizeAssemblyBlocks } from "../assembly/order";
 import { GoEnvManager } from "../env";
-import { buildLineMaps } from "./lineMaps";
-import { createSourceMatchTarget } from "./sourceMatchTarget";
+import { filename } from "../format";
+import { getFunctions } from "../go/dependencies";
 import { matchesSourceFile, SourceFileMatchTarget } from "./sourceMatch";
-import { getHtml } from "./webviewHtml";
+import { createSourceMatchTarget } from "./sourceMatchTarget";
+import { getHtml, getHtmlAssembly } from "./webviewHtml";
 
+/**
+ * Finds the best matching source editor for the given source file.
+ * @param srcFile The source file path extracted from the assembly metadata, e.g. "src/foo/bar.go".
+ * @param sourceFileUri The URI of the source file for the currently displayed assembly, used for exact matching. This is needed because the srcFile can be a relative path and may not be unique across the workspace. The editor with an exact URI match will be prioritized over others that only match by filename or suffix.
+ * @returns The best matching TextEditor, or undefined if no match is found.
+ */
 function findSourceEditor(
   srcFile: string,
   sourceFileUri: Uri,
-) {
+): TextEditor | undefined {
   const primaryEditor = window.visibleTextEditors.find(
-    (e) => e.document.uri.fsPath === sourceFileUri.fsPath,
+    (e) => e.document.uri.toString() === sourceFileUri.toString(),
   );
 
   return window.visibleTextEditors.find(
@@ -32,6 +40,11 @@ function findSourceEditor(
   );
 }
 
+/**
+ * A controller for a single assembly view panel.
+ * Responsible for rendering the assembly, handling interactions, and syncing highlights
+ * between the assembly and source code.
+ */
 export class AssemblyView implements Disposable {
   readonly panel: WebviewPanel;
   readonly fileUri: Uri;
@@ -40,8 +53,9 @@ export class AssemblyView implements Disposable {
   private readonly sourceMatchTarget: SourceFileMatchTarget;
 
   private _sourceHighlight: TextEditorDecorationType;
-  private _sourceToLines: Map<number, number[]> = new Map();
   private _disposables: Disposable[] = [];
+  private _asmContainer = new AssemblyContainer();
+  private _updateGeneration = 0;
 
   constructor(uri: Uri, envManager: GoEnvManager) {
     this.fileUri = uri;
@@ -60,11 +74,13 @@ export class AssemblyView implements Disposable {
       ViewColumn.Beside,
       { enableScripts: true },
     );
-    this.panel.webview.html = getHtml(
-      "loading...",
-      "",
-      new Map(),
-      this.sourceMatchTarget,
+    this.panel.webview.html = "loading...";
+    getHtml("loading...", "", new Map(), this.sourceMatchTarget).then(
+      (html) => {
+        if (this.panel.webview.html === "loading...") {
+          this.panel.webview.html = html;
+        }
+      },
     );
 
     // Handle messages from the webview (ASM hover → source highlight)
@@ -77,7 +93,7 @@ export class AssemblyView implements Disposable {
     // Handle cursor changes in source editor (source → ASM highlight)
     this._disposables.push(
       window.onDidChangeTextEditorSelection((e) => {
-        if (e.textEditor.document.uri.fsPath === this.fileUri.fsPath) {
+        if (e.textEditor.document.uri.toString() === this.fileUri.toString()) {
           this._syncFromSource(e.textEditor.selection.active.line + 1);
         }
       }),
@@ -98,26 +114,68 @@ export class AssemblyView implements Disposable {
     return this.panel.onDidDispose;
   }
 
+  /** Triggers an update of the assembly view, re-fetching and re-rendering the assembly. */
   async update() {
+    const generation = ++this._updateGeneration;
+
     try {
-      const asm = await getAsm(
+      this._asmContainer.clear();
+
+      await streamAsm(
         this.fileUri,
         this.envManager.getEnvVars(),
-        this.envManager.getGcFlags()
+        this.envManager.getGcFlags(),
+        (b) => {
+          if (generation === this._updateGeneration) {
+            this._addBlock(b);
+          }
+        },
       );
-      const { lineToSource, sourceToLines } = buildLineMaps(
-        asm,
+
+      if (generation !== this._updateGeneration) {
+        return;
+      }
+
+      await this.updateView();
+    } catch (err: any) {
+      if (generation !== this._updateGeneration) {
+        return;
+      }
+      this.panel.webview.html = await getHtml(
+        `got an error: ${JSON.stringify({ ...err }, undefined, 2)}`,
+        this.filename,
+        new Map(),
         this.sourceMatchTarget,
       );
-      this._sourceToLines = sourceToLines;
-      this.panel.webview.html = getHtml(
-        asm,
+    }
+  }
+
+  // Adds a new assembly block to the container. This is called for each block as they are streamed in, allowing for incremental rendering.
+  private _addBlock(b: AssemblyBlock) {
+    this._asmContainer.addBlock(b);
+  }
+
+  /** Renders the current assembly blocks in the webview.
+   * Should be called after updating the assembly container with new blocks. */
+  async updateView() {
+    try {
+      const funcs = await getFunctions(this.fileUri);
+      const prioritized = prioritizeAssemblyBlocks(this._asmContainer.blocks, funcs);
+      this._asmContainer.rebuildMaps(prioritized, (file) => matchesSourceFile(file, this.sourceMatchTarget));
+
+      let b = prioritized;
+      if (b.length > 1000) {
+        b = b.slice(0, 1000);
+      }
+
+      this.panel.webview.html = await getHtmlAssembly(
+        b,
         this.filename,
-        lineToSource,
+        this._asmContainer.lineToSource,
         this.sourceMatchTarget,
       );
     } catch (err: any) {
-      this.panel.webview.html = getHtml(
+      this.panel.webview.html = await getHtml(
         `got an error: ${JSON.stringify({ ...err }, undefined, 2)}`,
         this.filename,
         new Map(),
@@ -139,32 +197,11 @@ export class AssemblyView implements Disposable {
       }
     } else if (m["type"] === "hoverEnd") {
       this._clearSourceHighlight();
-    } else if (m["type"] === "export") {
-      const content = m["content"];
-      if (typeof content === "string") {
-        this._exportAssembly(content);
-      }
     }
   }
 
-  private async _exportAssembly(content: string) {
-    const defaultUri = Uri.file(this.filename.replace(/\.go$/, ".s"));
-    const uri = await window.showSaveDialog({
-      defaultUri,
-      filters: {
-        "Assembly files": ["s"],
-        "Text files": ["txt"],
-        "All files": ["*"],
-      },
-      saveLabel: "Export Assembly",
-    });
-    if (!uri) {
-      return;
-    }
-    await workspace.fs.writeFile(uri, new TextEncoder().encode(content));
-    window.showInformationMessage(`Assembly exported to ${uri.fsPath}`);
-  }
-
+  // Highlights the given source line in the editor.
+  // Called when hovering over an assembly line that maps to a source line.
   private _highlightSourceLine(srcFile: string, srcLine: number) {
     const editor = findSourceEditor(srcFile, this.fileUri);
     if (!editor) {
@@ -181,14 +218,19 @@ export class AssemblyView implements Disposable {
     editor.revealRange(range, TextEditorRevealType.InCenterIfOutsideViewport);
   }
 
+  // Clears any source line highlights in all visible editors.
+  // Called when the hover ends in the assembly view.
   private _clearSourceHighlight() {
     window.visibleTextEditors.forEach((e) => {
       e.setDecorations(this._sourceHighlight, []);
     });
   }
 
+  // Syncs the currently highlighted source line to the assembly view
+  // causing the corresponding assembly lines to be highlighted.
   private _syncFromSource(sourceLine: number) {
-    const asmLines = this._sourceToLines.get(sourceLine) ?? [];
+    const asmLines = this._asmContainer.sourceToLines.get(sourceLine) ?? [];
+
     this.panel.webview.postMessage({
       type: "highlightLines",
       lines: asmLines,
