@@ -30,8 +30,5 @@ export function prioritizeAssemblyBlocks(
 
       return left.originalIndex - right.originalIndex;
     })
-    .map(({ block, currentFileIndex }) => ({
-      ...block,
-      sortIndex: currentFileIndex >= 0 ? currentFileIndex : undefined,
-    }));
+    .map(({ block }) => block);
 }

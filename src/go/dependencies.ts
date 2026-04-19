@@ -3,8 +3,6 @@ import { executeCommand } from "../commands/commands";
 import { goFSPath } from "../format";
 import { parseFunctionSymbols } from "./symbols";
 
-export { parseFunctionSymbols } from "./symbols";
-
 export async function getFunctions(uri: Uri): Promise<string[]> {
   const fs = goFSPath(uri);
   const data = await executeCommand("gopls", ["symbols", fs]);
