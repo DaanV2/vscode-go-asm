@@ -317,7 +317,7 @@ export async function getHtml(
   );
 }
 
-export async function getHtmlLines(
+async function getHtmlLines(
   rawLines: string[],
   filename: string,
   lineToSource: Map<number, SourceRef>,

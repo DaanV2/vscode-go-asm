@@ -21,7 +21,7 @@ export namespace AssemblyBlock {
     let last: AssemblyBlock = { header: lines[i].trim(), data: [] };
     result.push(last);
 
-    for (; i < lines.length; i++) {
+    for (i++; i < lines.length; i++) {
       const line = lines[i];
       if (line.startsWith("\t")) {
         last.data.push(line.trim());

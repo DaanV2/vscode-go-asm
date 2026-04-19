@@ -1,10 +1,8 @@
 import { extractLineInfo } from "../view/lineMaps";
+import type { SourceRef } from "../view/lineMaps";
 import { AssemblyBlock } from "./info";
 
-export interface SourceRef {
-  srcFile: string;
-  srcLine: number;
-}
+export type { SourceRef } from "../view/lineMaps";
 
 export class AssemblyContainer {
   lineToSource: Map<number, SourceRef> = new Map();
@@ -14,8 +12,6 @@ export class AssemblyContainer {
   /** constant info */
   constants: Array<AssemblyBlock> = [];
   private _lineOffset = 0;
-
-  constructor() {}
 
   addBlock(block: AssemblyBlock) {
     if (block.header.startsWith("SWDARFCONST")) {

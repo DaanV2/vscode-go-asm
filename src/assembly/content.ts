@@ -127,23 +127,26 @@ function commandArgs(goUri: Uri, gcflags?: string) {
 }
 
 class GoStreamHandler {
-  private _data: string;
+  private _chunks: Buffer[];
 
   constructor(
     public asmCallback: (ab: AssemblyBlock) => void,
     private _workspaceDir?: string,
   ) {
-    this._data = "";
+    this._chunks = [];
   }
 
   streamedStdErr(data: Buffer) {
-    this._data += data.toString();
+    this._chunks.push(data);
+    const buf = Buffer.concat(this._chunks);
+    const text = buf.toString();
 
-    const offset = AssemblyBlock.isolate(this._data);
+    const offset = AssemblyBlock.isolate(text);
     if (offset >= 0) {
-      const text = this._data.slice(0, offset);
-      this._data = this._data.slice(offset);
-      const blocks = AssemblyBlock.parse(text);
+      const isolated = text.slice(0, offset);
+      // Keep the remainder as a buffer view (no copy) for the next call
+      this._chunks = [buf.subarray(offset)];
+      const blocks = AssemblyBlock.parse(isolated);
       blocks.forEach((block) => {
         if (this._workspaceDir) {
           block.data = block.data.map((line) =>
@@ -156,11 +159,12 @@ class GoStreamHandler {
   }
 
   finish() {
-    if (this._data.length === 0) {
+    if (this._chunks.length === 0) {
       return;
     }
-    const blocks = AssemblyBlock.parse(this._data);
-    this._data = "";
+    const text = Buffer.concat(this._chunks).toString();
+    this._chunks = [];
+    const blocks = AssemblyBlock.parse(text);
     blocks.forEach((block) => {
       if (this._workspaceDir) {
         block.data = block.data.map((line) =>
