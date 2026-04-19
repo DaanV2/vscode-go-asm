@@ -2,7 +2,6 @@ import { AssemblyBlock, INSTRUCTION_HOVER, REGISTER_HOVER } from "../assembly";
 import { logger } from "../logger/logger";
 import { SourceRef } from "./lineMaps";
 import { SourceFileMatchTarget, matchesSourceFile } from "./sourceMatch";
-import { ProgressLocation, window } from "vscode";
 
 interface RenderBlock {
   header: string;
@@ -99,18 +98,8 @@ function convertToRenderBlocks(
   });
 }
 
-function renderBodyContent(content: RenderBlock[] | string[]): string {
-  const isBlocks =
-    content.length > 0 &&
-    typeof content[0] === "object" &&
-    content[0] !== null &&
-    "header" in content[0];
-
-  if (!isBlocks) {
-    return (content as string[]).join("");
-  }
-
-  return (content as RenderBlock[])
+function renderBlocksHtml(blocks: RenderBlock[]): string {
+  return blocks
     .map(
       (block) => `
 <details class="asm-block" open>
@@ -135,11 +124,12 @@ function buildHoverDataJson(): string {
   return safeJsonForScript(combined);
 }
 
-function renderHtml(
-  filename: string,
-  content: RenderBlock[] | string[],
-): string {
-  const bodyContent = renderBodyContent(content);
+/**
+ * Returns the static HTML shell for the assembly view panel.
+ * Rendered once when the panel is created; assembly content is updated
+ * via postMessage({ type: 'updateAsm', html }) without reloading this shell.
+ */
+export function getShellHtml(filename: string): string {
   const hoverDataJson = buildHoverDataJson();
 
   return `
@@ -251,7 +241,7 @@ function renderHtml(
   <span id="matchCount"></span>
 </div>
 <h3>Go Assembly: ${escapeHtml(filename)}</h3>
-<div id="asm">${bodyContent}</div>
+<div id="asm"><span style="padding: 0 10px; opacity: 0.6;">Loading assembly\u2026</span></div>
 <div id="asm-tooltip" role="tooltip" aria-hidden="true">
   <div class="tooltip-title"></div>
   <div class="tooltip-category"></div>
@@ -264,10 +254,24 @@ function renderHtml(
     const filterMode = document.getElementById('filterMode');
     const sourceOnly = document.getElementById('sourceOnly');
     const matchCountEl = document.getElementById('matchCount');
-    const lines = document.querySelectorAll('.line');
+    const asmContainer = document.getElementById('asm');
 
-    // Search / filter
+    // Restore persisted UI state across panel reloads (e.g. VS Code restart)
+    (function restoreState() {
+      const state = vscode.getState();
+      if (!state) { return; }
+      if (typeof state.sourceOnly === 'boolean') { sourceOnly.checked = state.sourceOnly; }
+      if (typeof state.filterMode === 'boolean') { filterMode.checked = state.filterMode; }
+      if (typeof state.search === 'string') { searchInput.value = state.search; }
+    }());
+
+    function saveState() {
+      vscode.setState({ sourceOnly: sourceOnly.checked, filterMode: filterMode.checked, search: searchInput.value });
+    }
+
+    // Re-queries lines from the live DOM so it works after updateAsm replaces innerHTML
     function applySearch() {
+      const lines = asmContainer.querySelectorAll('.line');
       const query = searchInput.value.toLowerCase();
       const isFilter = filterMode.checked;
       const isSourceOnly = sourceOnly.checked;
@@ -287,13 +291,12 @@ function renderHtml(
         if (matches && query.length > 0 && !isHidden) { count++; }
       });
 
-      document.querySelectorAll('.asm-block').forEach(function (block) {
+      asmContainer.querySelectorAll('.asm-block').forEach(function (block) {
         const hasVisibleLine = block.querySelector('.line:not(.no-match)') !== null;
         block.classList.toggle('no-visible-lines', !hasVisibleLine);
       });
 
-      // Auto-expand blocks that have matching lines; collapse blocks with no matches
-      document.querySelectorAll('.asm-block').forEach(function (block) {
+      asmContainer.querySelectorAll('.asm-block').forEach(function (block) {
         if (!query) { return; }
         const hasMatch = block.querySelector('.line.match:not(.no-match)') !== null;
         if (hasMatch) { block.setAttribute('open', ''); }
@@ -305,49 +308,72 @@ function renderHtml(
         : '';
     }
 
-    searchInput.addEventListener('input', applySearch);
-    filterMode.addEventListener('change', applySearch);
-    sourceOnly.addEventListener('change', applySearch);
-    applySearch();
+    searchInput.addEventListener('input', function () { saveState(); applySearch(); });
+    filterMode.addEventListener('change', function () { saveState(); applySearch(); });
+    sourceOnly.addEventListener('change', function () { saveState(); applySearch(); });
 
-    // Hover over ASM line -> highlight source
-    lines.forEach(function (line) {
-      const srcFile = line.getAttribute('data-src-file');
-      const srcLine = line.getAttribute('data-src-line');
-      if (!srcFile || !srcLine) { return; }
-      line.addEventListener('mouseenter', function () {
-        vscode.postMessage({ type: 'hover', srcFile: srcFile, srcLine: parseInt(srcLine, 10) });
-      });
-      line.addEventListener('mouseleave', function () {
-        vscode.postMessage({ type: 'hoverEnd' });
-      });
+    // Event delegation: ASM line hover -> highlight source in editor
+    // Attached once to the container so it survives innerHTML replacements.
+    var currentHoverLine = null;
+    asmContainer.addEventListener('mouseover', function (e) {
+      var line = e.target.closest ? e.target.closest('.line') : null;
+      if (line === currentHoverLine) { return; }
+      if (currentHoverLine) { vscode.postMessage({ type: 'hoverEnd' }); }
+      currentHoverLine = line;
+      if (line && line.getAttribute('data-src-file')) {
+        vscode.postMessage({
+          type: 'hover',
+          srcFile: line.getAttribute('data-src-file'),
+          srcLine: parseInt(line.getAttribute('data-src-line'), 10),
+        });
+      }
+    });
+    asmContainer.addEventListener('mouseleave', function () {
+      if (currentHoverLine) { vscode.postMessage({ type: 'hoverEnd' }); }
+      currentHoverLine = null;
     });
 
-    // Incoming highlight from extension (source cursor -> highlight ASM lines)
+    // Incoming messages from extension
     window.addEventListener('message', function (event) {
       const msg = event.data;
-      if (!msg || msg.type !== 'highlightLines') { return; }
-      const toHighlight = new Set(msg.lines);
-      lines.forEach(function (line) {
-        const idx = line.getAttribute('data-asm-line');
-        line.classList.toggle('asm-highlighted', idx !== null && toHighlight.has(parseInt(idx, 10)));
-      });
-      // Auto-expand blocks that contain highlighted lines
-      document.querySelectorAll('.asm-block').forEach(function (block) {
-        if (block.querySelector('.line.asm-highlighted') !== null) {
-          block.setAttribute('open', '');
-        }
-      });
-      // Scroll first highlighted line into view
-      if (msg.lines && msg.lines.length > 0) {
-        const first = document.querySelector('.line.asm-highlighted');
-        if (first) {
-          first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      if (!msg) { return; }
+
+      if (msg.type === 'updateAsm') {
+        asmContainer.innerHTML = msg.html;
+        applySearch();
+        return;
+      }
+
+      if (msg.type === 'updateStatus') {
+        const el = document.createElement('span');
+        el.style.cssText = 'padding: 0 10px; opacity: 0.6;';
+        el.textContent = msg.message;
+        asmContainer.replaceChildren(el);
+        return;
+      }
+
+      if (msg.type === 'highlightLines') {
+        const toHighlight = new Set(msg.lines);
+        asmContainer.querySelectorAll('.line').forEach(function (line) {
+          const idx = line.getAttribute('data-asm-line');
+          line.classList.toggle('asm-highlighted', idx !== null && toHighlight.has(parseInt(idx, 10)));
+        });
+        asmContainer.querySelectorAll('.asm-block').forEach(function (block) {
+          if (block.querySelector('.line.asm-highlighted') !== null) {
+            block.setAttribute('open', '');
+          }
+        });
+        if (msg.lines && msg.lines.length > 0) {
+          const first = asmContainer.querySelector('.line.asm-highlighted');
+          if (first) {
+            first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
         }
       }
     });
 
     // Hover tooltips for registers (.reg) and instructions (.op)
+    // Event delegation so tooltips work after innerHTML is replaced.
     var hoverData = ${hoverDataJson};
     var tooltip = document.getElementById('asm-tooltip');
     var tooltipTitle = tooltip.querySelector('.tooltip-title');
@@ -370,7 +396,6 @@ function renderHtml(
       var left = Math.max(4, Math.min(rect.left, window.innerWidth - tipWidth - 8));
       tooltip.style.left = left + 'px';
 
-      // Position below the element if there is room, otherwise above
       var spaceBelow = window.innerHeight - rect.bottom;
       if (spaceBelow >= 80 || spaceBelow >= rect.top) {
         tooltip.style.top = (rect.bottom + 6) + 'px';
@@ -386,9 +411,17 @@ function renderHtml(
       tooltip.setAttribute('aria-hidden', 'true');
     }
 
-    document.querySelectorAll('.reg, .op').forEach(function (el) {
-      el.addEventListener('mouseenter', function () { showTooltip(el); });
-      el.addEventListener('mouseleave', hideTooltip);
+    asmContainer.addEventListener('mouseover', function (e) {
+      var el = e.target;
+      if (el.classList && (el.classList.contains('reg') || el.classList.contains('op'))) {
+        showTooltip(el);
+      }
+    });
+    asmContainer.addEventListener('mouseout', function (e) {
+      var el = e.target;
+      if (el.classList && (el.classList.contains('reg') || el.classList.contains('op'))) {
+        hideTooltip();
+      }
     });
   }());
 </script>
@@ -397,83 +430,24 @@ function renderHtml(
 `;
 }
 
-export async function getHtml(
-  asm: string,
-  filename: string,
+/**
+ * Generates the inner HTML string for the #asm container from assembly blocks.
+ * Send via postMessage({ type: 'updateAsm', html }) to update the view without
+ * reloading the shell or losing UI state.
+ */
+export function getAsmContentHtml(
+  rawBlocks: AssemblyBlock[],
   lineToSource: Map<number, SourceRef>,
   sourceMatchTarget: SourceFileMatchTarget,
-) {
-  return getHtmlLines(
-    asm.split("\n"),
-    filename,
-    lineToSource,
-    sourceMatchTarget,
-  );
+): string {
+  const start = performance.now();
+  const blocks = convertToRenderBlocks(rawBlocks, lineToSource, sourceMatchTarget);
+  logger.info(`Rendered ${blocks.length} assembly blocks in ${(performance.now() - start).toFixed(2)}ms`);
+
+  if (blocks.length === 0) {
+    return '<span style="padding: 0 10px; opacity: 0.6;">No assembly output.</span>';
+  }
+
+  return renderBlocksHtml(blocks);
 }
 
-async function getHtmlLines(
-  rawLines: string[],
-  filename: string,
-  lineToSource: Map<number, SourceRef>,
-  sourceMatchTarget: SourceFileMatchTarget,
-) {
-  const popts = {
-    location: ProgressLocation.Window,
-    cancellable: false,
-    title: "Generating assembly view...",
-  };
-
-  return window.withProgress(popts, async () => {
-    const start = performance.now();
-    const validBlocks = parseRenderBlocks(
-      rawLines,
-      lineToSource,
-      sourceMatchTarget,
-    );
-
-    if (validBlocks.length > 0) {
-      logger.info(
-        `Parsed assembly into ${validBlocks.length} blocks in ${(performance.now() - start).toFixed(2)}ms`,
-      );
-
-      return renderHtml(filename, validBlocks);
-    }
-
-    const processedLines = rawLines.map((line, idx) =>
-      createAssemblyLine(line, idx, lineToSource, sourceMatchTarget),
-    );
-    return renderHtml(filename, processedLines);
-  });
-}
-
-export async function getHtmlAssembly(
-  rawLines: AssemblyBlock[],
-  filename: string,
-  lineToSource: Map<number, SourceRef>,
-  sourceMatchTarget: SourceFileMatchTarget,
-) {
-  const popts = {
-    location: ProgressLocation.Window,
-    cancellable: false,
-    title: "Generating assembly view...",
-  };
-
-  return window.withProgress(popts, async () => {
-    const start = performance.now();
-    const validBlocks = convertToRenderBlocks(
-      rawLines,
-      lineToSource,
-      sourceMatchTarget,
-    );
-
-    if (validBlocks.length > 0) {
-      logger.info(
-        `Parsed assembly into ${validBlocks.length} blocks in ${(performance.now() - start).toFixed(2)}ms`,
-      );
-
-      return renderHtml(filename, validBlocks);
-    }
-
-    return renderHtml(filename, ["issue rendering assembly"]);
-  });
-}
