@@ -1,4 +1,4 @@
-import { AssemblyBlock } from "../assembly";
+import { AssemblyBlock, INSTRUCTION_HOVER, REGISTER_HOVER } from "../assembly";
 import { logger } from "../logger/logger";
 import { SourceRef } from "./lineMaps";
 import { SourceFileMatchTarget, matchesSourceFile } from "./sourceMatch";
@@ -121,11 +121,26 @@ function renderBodyContent(content: RenderBlock[] | string[]): string {
     .join("\n");
 }
 
+/** Serializes an object to JSON for safe embedding inside a <script> tag. */
+function safeJsonForScript(data: unknown): string {
+  return JSON.stringify(data).replace(/<\//g, "<\\/");
+}
+
+/** Builds a single lookup map combining register and instruction hover data. */
+function buildHoverDataJson(): string {
+  const combined: Record<string, { title: string; description: string; category: string }> = {
+    ...REGISTER_HOVER,
+    ...INSTRUCTION_HOVER,
+  };
+  return safeJsonForScript(combined);
+}
+
 function renderHtml(
   filename: string,
   content: RenderBlock[] | string[],
 ): string {
   const bodyContent = renderBodyContent(content);
+  const hoverDataJson = buildHoverDataJson();
 
   return `
 <html>
@@ -133,8 +148,8 @@ function renderHtml(
 <style>
   body { font-family: var(--vscode-editor-font-family, monospace); background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); padding: 10px; }
   .addr { color: var(--vscode-textPreformat-foreground, #d7ba7d); }
-  .op { color: var(--vscode-debugTokenExpression-name, #c586c0); }
-  .reg { color: var(--vscode-debugTokenExpression-type, #4a90e2); }
+  .op { color: var(--vscode-debugTokenExpression-name, #c586c0); cursor: help; }
+  .reg { color: var(--vscode-debugTokenExpression-type, #4a90e2); cursor: help; }
   .imm { color: var(--vscode-debugTokenExpression-number, #b5cea8); }
   .comment { color: var(--vscode-descriptionForeground, rgba(204,204,204,0.7)); font-style: italic; }
   .src { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 2px 4px; border-radius: 3px; }
@@ -196,6 +211,36 @@ function renderHtml(
   #matchCount { color: var(--vscode-descriptionForeground); font-size: 12px; }
   h3 { margin: 6px 0 2px 0; padding: 0 10px; }
   #asm { padding: 4px 0 10px 0; }
+  /* Hover tooltip */
+  #asm-tooltip {
+    position: fixed;
+    z-index: 200;
+    max-width: 400px;
+    background: var(--vscode-editorHoverWidget-background, var(--vscode-editor-background));
+    color: var(--vscode-editorHoverWidget-foreground, var(--vscode-editor-foreground));
+    border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-panel-border, #444));
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-family: var(--vscode-font-family, sans-serif);
+    font-size: 13px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    pointer-events: none;
+    display: none;
+    white-space: normal;
+    line-height: 1.4;
+  }
+  #asm-tooltip.visible { display: block; }
+  .tooltip-title { font-weight: bold; margin-bottom: 5px; font-family: var(--vscode-editor-font-family, monospace); font-size: 13px; }
+  .tooltip-category {
+    display: inline-block;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: var(--vscode-badge-background, #444);
+    color: var(--vscode-badge-foreground, #fff);
+    margin-bottom: 6px;
+  }
+  .tooltip-desc { font-size: 12px; opacity: 0.92; }
 </style>
 </head>
 <body>
@@ -207,6 +252,11 @@ function renderHtml(
 </div>
 <h3>Go Assembly: ${escapeHtml(filename)}</h3>
 <div id="asm">${bodyContent}</div>
+<div id="asm-tooltip" role="tooltip" aria-hidden="true">
+  <div class="tooltip-title"></div>
+  <div class="tooltip-category"></div>
+  <div class="tooltip-desc"></div>
+</div>
 <script>
   (function () {
     const vscode = acquireVsCodeApi();
@@ -295,6 +345,50 @@ function renderHtml(
           first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
       }
+    });
+
+    // Hover tooltips for registers (.reg) and instructions (.op)
+    var hoverData = ${hoverDataJson};
+    var tooltip = document.getElementById('asm-tooltip');
+    var tooltipTitle = tooltip.querySelector('.tooltip-title');
+    var tooltipCategory = tooltip.querySelector('.tooltip-category');
+    var tooltipDesc = tooltip.querySelector('.tooltip-desc');
+
+    function showTooltip(el) {
+      var key = el.textContent.trim().toUpperCase();
+      var item = hoverData[key];
+      if (!item) { return; }
+
+      tooltipTitle.textContent = item.title;
+      tooltipCategory.textContent = item.category;
+      tooltipDesc.textContent = item.description;
+      tooltip.setAttribute('aria-hidden', 'false');
+      tooltip.classList.add('visible');
+
+      var rect = el.getBoundingClientRect();
+      var tipWidth = tooltip.offsetWidth;
+      var left = Math.max(4, Math.min(rect.left, window.innerWidth - tipWidth - 8));
+      tooltip.style.left = left + 'px';
+
+      // Position below the element if there is room, otherwise above
+      var spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow >= 80 || spaceBelow >= rect.top) {
+        tooltip.style.top = (rect.bottom + 6) + 'px';
+        tooltip.style.bottom = '';
+      } else {
+        tooltip.style.top = '';
+        tooltip.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
+      }
+    }
+
+    function hideTooltip() {
+      tooltip.classList.remove('visible');
+      tooltip.setAttribute('aria-hidden', 'true');
+    }
+
+    document.querySelectorAll('.reg, .op').forEach(function (el) {
+      el.addEventListener('mouseenter', function () { showTooltip(el); });
+      el.addEventListener('mouseleave', hideTooltip);
     });
   }());
 </script>
