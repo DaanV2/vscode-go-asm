@@ -1,5 +1,6 @@
 import {
   Disposable,
+  TextEditor,
   TextEditorDecorationType,
   TextEditorRevealType,
   ThemeColor,
@@ -16,7 +17,16 @@ import { matchesSourceFile, SourceFileMatchTarget } from "./sourceMatch";
 import { createSourceMatchTarget } from "./sourceMatchTarget";
 import { getHtml, getHtmlAssembly } from "./webviewHtml";
 
-function findSourceEditor(srcFile: string, sourceFileUri: Uri) {
+/**
+ * Finds the best matching source editor for the given source file.
+ * @param srcFile The source file path extracted from the assembly metadata, e.g. "src/foo/bar.go".
+ * @param sourceFileUri The URI of the source file for the currently displayed assembly, used for exact matching. This is needed because the srcFile can be a relative path and may not be unique across the workspace. The editor with an exact URI match will be prioritized over others that only match by filename or suffix.
+ * @returns The best matching TextEditor, or undefined if no match is found.
+ */
+function findSourceEditor(
+  srcFile: string,
+  sourceFileUri: Uri,
+): TextEditor | undefined {
   const primaryEditor = window.visibleTextEditors.find(
     (e) => e.document.uri.toString() === sourceFileUri.toString(),
   );
@@ -28,6 +38,11 @@ function findSourceEditor(srcFile: string, sourceFileUri: Uri) {
   );
 }
 
+/**
+ * A controller for a single assembly view panel.
+ * Responsible for rendering the assembly, handling interactions, and syncing highlights
+ * between the assembly and source code.
+ */
 export class AssemblyView implements Disposable {
   readonly panel: WebviewPanel;
   readonly fileUri: Uri;
@@ -96,6 +111,7 @@ export class AssemblyView implements Disposable {
     return this.panel.onDidDispose;
   }
 
+  /** Triggers an update of the assembly view, re-fetching and re-rendering the assembly. */
   async update() {
     try {
       this._asmContainer.clear();
@@ -118,6 +134,13 @@ export class AssemblyView implements Disposable {
     }
   }
 
+  // Adds a new assembly block to the container. This is called for each block as they are streamed in, allowing for incremental rendering.
+  private _addBlock(b: AssemblyBlock) {
+    this._asmContainer.addBlock(b);
+  }
+
+  /** Renders the current assembly blocks in the webview.
+   * Should be called after updating the assembly container with new blocks. */
   async updateView() {
     try {
       let b = this._asmContainer.blocks;
@@ -141,12 +164,8 @@ export class AssemblyView implements Disposable {
     }
   }
 
-  private _addBlock(b: AssemblyBlock) {
-    
-
-    this._asmContainer.addBlock(b);
-  }
-
+  // Handles messages received from the webview
+  // such as hover events for syncing highlights between the assembly and source code.
   private _handleWebviewMessage(msg: unknown) {
     if (!msg || typeof msg !== "object") {
       return;
@@ -163,6 +182,8 @@ export class AssemblyView implements Disposable {
     }
   }
 
+  // Highlights the given source line in the editor.
+  // Called when hovering over an assembly line that maps to a source line.
   private _highlightSourceLine(srcFile: string, srcLine: number) {
     const editor = findSourceEditor(srcFile, this.fileUri);
     if (!editor) {
@@ -179,12 +200,16 @@ export class AssemblyView implements Disposable {
     editor.revealRange(range, TextEditorRevealType.InCenterIfOutsideViewport);
   }
 
+  // Clears any source line highlights in all visible editors.
+  // Called when the hover ends in the assembly view.
   private _clearSourceHighlight() {
     window.visibleTextEditors.forEach((e) => {
       e.setDecorations(this._sourceHighlight, []);
     });
   }
 
+  // Syncs the currently highlighted source line to the assembly view
+  // causing the corresponding assembly lines to be highlighted.
   private _syncFromSource(sourceLine: number) {
     const asmLines = this._asmContainer.sourceToLines.get(sourceLine) ?? [];
 

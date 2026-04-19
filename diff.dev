@@ -1,0 +1,1114 @@
+diff --git a/src/assembly/container.ts b/src/assembly/container.ts
+new file mode 100644
+index 0000000..6e98663
+--- /dev/null
++++ b/src/assembly/container.ts
+@@ -0,0 +1,35 @@
++import { extractLineInfo } from "../view/lineMaps";
++import { AssemblyBlock } from "./info";
++
++export interface SourceRef {
++  srcFile: string;
++  srcLine: number;
++}
++
++export class AssemblyContainer {
++  lineToSource: Map<number, SourceRef> = new Map();
++  sourceToLines: Map<number, number[]> = new Map();
++  /** Raw assembly blocks */
++  blocks: Array<AssemblyBlock> = [];
++  /** constant info */
++  constants: Array<AssemblyBlock> = [];
++
++  constructor() {}
++
++  addBlock(block: AssemblyBlock) {
++    if (block.header.startsWith("SWDARFCONST")) {
++      this.constants.push(block);
++    }
++    // Functions
++    else if (block.header.includes("STEXT")) {
++      this.blocks.push(block);
++      extractLineInfo(block.data, this.lineToSource, this.sourceToLines);
++    }
++  }
++
++  clear() {
++    this.lineToSource.clear();
++    this.sourceToLines.clear();
++    this.blocks = [];
++  }
++}
+diff --git a/src/assembly/content.ts b/src/assembly/content.ts
+index 0fa70bf..606b2ef 100644
+--- a/src/assembly/content.ts
++++ b/src/assembly/content.ts
+@@ -1,44 +1,36 @@
+ import { ProgressLocation, Uri, window, workspace } from "vscode";
+-import { CommandOptions, executeCommand } from "../commands/commands";
++import {
++  CommandOptions,
++  executeCommand,
++  streamExecuteCommand,
++} from "../commands/commands";
+ import { goFSPath, packageUri } from "../format";
+ import { getFunctions } from "../go/dependencies";
+ import { AssemblyBlock } from "./info";
++import { prioritizeAssemblyBlocks } from "./order";
+ import { logger } from "../logger/logger";
+ 
+ export async function getAsm(
+   goUri: Uri,
+   env?: NodeJS.ProcessEnv,
+-  gcflags?: string
++  gcflags?: string,
+ ): Promise<string> {
+   logger.info("getting assembly", { uri: goUri.toString() });
++  const options = commandsOptions(goUri, env);
++  const cmmArgs = commandArgs(goUri, gcflags);
+ 
+-  const options: CommandOptions = { env };
+-  const packageDir = goFSPath(packageUri(goUri));
+-  const ws = workspace.getWorkspaceFolder(goUri);
+-  if (ws) {
+-    options.cwd = ws.uri.fsPath;
+-  } else if (
+-    workspace.workspaceFolders &&
+-    workspace.workspaceFolders?.length > 0
+-  ) {
+-    options.cwd = workspace.workspaceFolders[0].uri.fsPath;
+-  }
+-
+-  // go build -gcflags="-S" ./package/subpackage
+   const popts = {
+     location: ProgressLocation.Window,
+     cancellable: true,
++
+     title: "compiling go for assembly",
+   };
+   const info = await window.withProgress(popts, async (progress, token) => {
+     // Compiling package code
+     progress.report({ message: "compiling..." });
+-    const result = await executeCommand(
+-      "go",
+-      ["build", gcflags ?? "-gcflags=-S", packageDir],
+-      options,
+-      token
+-    );
++
++    // go build -gcflags="-S" ./package/subpackage
++    const result = await executeCommand("go", cmmArgs, options, token);
+ 
+     if ((result.code ?? 0) > 0) {
+       return [
+@@ -53,28 +45,109 @@ export async function getAsm(
+     progress.report({ message: "parsing..." });
+     let info = AssemblyBlock.parse(result.stderr);
+ 
+-    // Filter only the functions from the file, recording their declaration order.
++    // Keep package assembly available so the view can reveal other-file code.
+     progress.report({ message: "filtering..." });
+     const funcs = await getFunctions(goUri);
+-    info = info.flatMap((block) => {
+-      const idx = funcs.findIndex((f) => block.header.includes(f));
+-      if (idx === -1) {
+-        return [];
+-      }
+-      block.sortIndex = idx;
+-      return [block];
+-    });
+-
+-    info.sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
++    info = prioritizeAssemblyBlocks(info, funcs);
+ 
+     // Done
+     progress.report({ message: "done" });
+     return info;
+   });
+ 
++  const packageDir = goFSPath(packageUri(goUri));
++
+   return info.map(printAssemblyInfo(packageDir, options.cwd)).join("\n");
+ }
+ 
++export async function streamAsm(
++  goUri: Uri,
++  env: NodeJS.ProcessEnv | undefined,
++  gcflags: string | undefined,
++  asmCallback: (ab: AssemblyBlock) => void,
++) {
++  logger.info("getting assembly", { uri: goUri.toString() });
++  const options = commandsOptions(goUri, env);
++  const cmmArgs = commandArgs(goUri, gcflags);
++  const handler = new goStreamHandler(asmCallback);
++
++  const popts = {
++    location: ProgressLocation.Window,
++    cancellable: true,
++
++    title: "compiling go for assembly",
++  };
++
++  return await window.withProgress(popts, async (progress, token) => {
++    // Compiling package code
++    progress.report({ message: "compiling and streaming result..." });
++
++    // go build -gcflags="-S" ./package/subpackage
++    const result = await streamExecuteCommand(
++      "go",
++      cmmArgs,
++      options,
++      token,
++      undefined,
++      handler.streamedStdErr.bind(handler),
++    );
++
++    if ((result.code ?? 0) > 0) {
++      asmCallback({
++        header: "Whoops!",
++        data: ["Error compiling code", JSON.stringify(result, undefined, 2)],
++      });
++    }
++
++    handler.finish();
++  });
++}
++
++// commandsOptions determines the options for executing the go command, such as the working directory and environment variables.
++function commandsOptions(goUri: Uri, env?: NodeJS.ProcessEnv): CommandOptions {
++  const options: CommandOptions = { env };
++  const ws = workspace.getWorkspaceFolder(goUri);
++  if (ws) {
++    options.cwd = ws.uri.fsPath;
++  } else if (
++    workspace.workspaceFolders &&
++    workspace.workspaceFolders?.length > 0
++  ) {
++    options.cwd = workspace.workspaceFolders[0].uri.fsPath;
++  }
++
++  return options;
++}
++
++// commandArgs determines the arguments for the go command, such as the package directory and gcflags.
++function commandArgs(goUri: Uri, gcflags?: string) {
++  const packageDir = goFSPath(packageUri(goUri));
++
++  return ["build", gcflags ?? "-gcflags=-S", packageDir];
++}
++
++class goStreamHandler {
++  private _data: string;
++
++  constructor(public asmCallback: (ab: AssemblyBlock) => void) {
++    this._data = "";
++  }
++
++  streamedStdErr(data: Buffer) {
++    this._data += data.toString();
++
++    const offset = AssemblyBlock.isolate(this._data);
++    if (offset >= 0) {
++      const text = this._data.slice(0, offset);
++      this._data = this._data.slice(offset);
++      const blocks = AssemblyBlock.parse(text);
++      blocks.forEach(this.asmCallback);
++    }
++  }
++
++  finish() {}
++}
++
+ function printAssemblyInfo(packageDir: string, cwd: string | undefined) {
+   packageDir = goFSPath(packageDir);
+   if (!packageDir.endsWith("/")) {
+@@ -86,7 +159,6 @@ function printAssemblyInfo(packageDir: string, cwd: string | undefined) {
+ 
+   return function (asm: AssemblyBlock): string {
+     const header = asm.header.replaceAll(" ", "\n#\t");
+-
+     let lines = asm.data.map((e) => e.replaceAll(packageDir, ""));
+ 
+     if (cwd) {
+diff --git a/src/assembly/info.ts b/src/assembly/info.ts
+index b464c88..5b99aa7 100644
+--- a/src/assembly/info.ts
++++ b/src/assembly/info.ts
+@@ -2,6 +2,7 @@ export interface AssemblyBlock {
+   header: string;
+   data: string[];
+   sortIndex?: number;
++  
+ }
+ 
+ export namespace AssemblyBlock {
+@@ -32,4 +33,33 @@ export namespace AssemblyBlock {
+ 
+     return result.filter((e) => e.header.length > 0 && e.data.length > 0);
+   }
++
++  // isolate grabs the last possible set of blocks, used for streaming, returns the offset of the isolated text, or -1 if no isolation was possible
++  export function isolate(text: string): number {
++    // Example: the last line is the /tcode of a block,
++    // the foo:bar is an example of a header, but we aren't sure yet that its finished
++
++    // \tcode
++    // foo:bar
++    let foundHeader = false;
++
++    // Walk backwards
++    for (let i = text.length - 1; i >= 0; i--) {
++      // 
++      const c = text[i];
++      if (c === "\n" || c === "\r") {
++        if (foundHeader) {
++          if (text[i + 1] === "\t") {
++            return i + 1;
++          }
++        } else {
++          if (text[i + 1] !== "\t") {
++            foundHeader = true;
++          }
++        }
++      }
++    }
++
++    return -1;
++  }
+ }
+diff --git a/src/assembly/order.ts b/src/assembly/order.ts
+new file mode 100644
+index 0000000..0ec6371
+--- /dev/null
++++ b/src/assembly/order.ts
+@@ -0,0 +1,37 @@
++import { AssemblyBlock } from "./info";
++
++export function prioritizeAssemblyBlocks(
++  blocks: AssemblyBlock[],
++  currentFileFunctions: string[],
++): AssemblyBlock[] {
++  return blocks
++    .map((block, originalIndex) => ({
++      block,
++      originalIndex,
++      currentFileIndex: currentFileFunctions.findIndex((name) =>
++        block.header.includes(name),
++      ),
++    }))
++    .sort((left, right) => {
++      const leftIsCurrent = left.currentFileIndex !== -1;
++      const rightIsCurrent = right.currentFileIndex !== -1;
++
++      if (leftIsCurrent !== rightIsCurrent) {
++        return leftIsCurrent ? -1 : 1;
++      }
++
++      if (
++        leftIsCurrent &&
++        rightIsCurrent &&
++        left.currentFileIndex !== right.currentFileIndex
++      ) {
++        return left.currentFileIndex - right.currentFileIndex;
++      }
++
++      return left.originalIndex - right.originalIndex;
++    })
++    .map(({ block, currentFileIndex }) => ({
++      ...block,
++      sortIndex: currentFileIndex >= 0 ? currentFileIndex : undefined,
++    }));
++}
+\ No newline at end of file
+diff --git a/src/cache/cache.ts b/src/cache/cache.ts
+new file mode 100644
+index 0000000..7868617
+--- /dev/null
++++ b/src/cache/cache.ts
+@@ -0,0 +1,20 @@
++interface CacheContainer<T> {
++  __cache__: T | null | undefined;
++}
++
++export namespace Cache {
++  // A simple utility to cache the result of a function that takes a single string key.
++  export function getOrCreate<T>(
++    key: string,
++    container: CacheContainer<T>,
++    createFn: (key: string) => T,
++  ): T {
++    if (container.__cache__) {
++      return container.__cache__;
++    }
++
++    const value = createFn(key);
++    container.__cache__ = value;
++    return value;
++  }
++}
+diff --git a/src/commands/commands.ts b/src/commands/commands.ts
+index 886a47b..bd662a8 100644
+--- a/src/commands/commands.ts
++++ b/src/commands/commands.ts
+@@ -24,7 +24,7 @@ export async function executeCommand(
+   command: "go" | "gopls",
+   args: string[],
+   options?: CommandOptions,
+-  token?: CancellationToken
++  token?: CancellationToken,
+ ): Promise<CommandOutput> {
+   return new Promise((resolve, reject) => {
+     const infoCommand = command + " " + args.join(" ");
+@@ -70,3 +70,54 @@ export async function executeCommand(
+     }
+   });
+ }
++
++// streaming version of executeCommand, allowing processing stdout/stderr in real time via callbacks
++export async function streamExecuteCommand(
++  command: "go" | "gopls",
++  args: string[],
++  options?: CommandOptions,
++  token?: CancellationToken,
++  stdOutCallback?: (data: Buffer) => void,
++  stdErrCallback?: (data: Buffer) => void,
++): Promise<Pick<CommandOutput, "code">> {
++  return new Promise((resolve, reject) => {
++    const infoCommand = command + " " + args.join(" ");
++    logger.info("executing command: " + infoCommand, options);
++
++    const cprocess = spawn(command, args, {
++      shell: false,
++      cwd: options?.cwd,
++      env: { ...process.env, ...options?.env },
++    });
++
++    if (stdOutCallback) {
++      cprocess.stdout.on("data", (data: Buffer) => {
++        stdOutCallback(data);
++      });
++    }
++
++    if (stdErrCallback) {
++      cprocess.stderr.on("data", (data: Buffer) => {
++        stdErrCallback(data);
++      });
++    }
++
++    cprocess.on("error", (err) => {
++      logger.error("problem with command: " + infoCommand, options, err);
++      reject(err);
++    });
++
++    cprocess.on("close", (code: number | null) => {
++      logger.info("command done: " + infoCommand);
++      resolve({ code });
++    });
++
++    // Handle cancellation
++    if (token) {
++      token.onCancellationRequested(() => {
++        cprocess.kill();
++        reject(new Error("command cancelled"));
++      });
++    }
++  });
++}
+diff --git a/src/documents/tracker.ts b/src/documents/tracker.ts
+index a01bf62..c820a66 100644
+--- a/src/documents/tracker.ts
++++ b/src/documents/tracker.ts
+@@ -33,7 +33,7 @@ export class DocumentTracker {
+     const result: [Uri, AssemblyView][] = [];
+ 
+     for (const entry of this._openFiles.entries()) {
+-      if (entry[0].fsPath.includes(packageUri.fsPath)) {
++      if (entry[0].path.startsWith(packageUri.path)) {
+         result.push(entry);
+       }
+     }
+diff --git a/src/extension.ts b/src/extension.ts
+index 3f5db08..32c12fd 100644
+--- a/src/extension.ts
++++ b/src/extension.ts
+@@ -60,7 +60,7 @@ function init(context: vscode.ExtensionContext) {
+     ),
+     // Events
+     vscode.workspace.onDidSaveTextDocument((e) => {
+-      if (!e.uri.fsPath.endsWith(".go")) {
++      if (!e.uri.path.endsWith(".go")) {
+         return;
+       }
+       logger.info("file saved, checking for assembly updates", { event: e });
+diff --git a/src/format/uris.ts b/src/format/uris.ts
+index 29b63eb..d0c1a6f 100644
+--- a/src/format/uris.ts
++++ b/src/format/uris.ts
+@@ -1,4 +1,3 @@
+-import path from "path";
+ import { Uri } from "vscode";
+ 
+ export function goFSPath(uri: Uri | string): string {
+@@ -16,5 +15,5 @@ export function packageUri(uri: Uri): Uri {
+ }
+ 
+ export function filename(uri: Uri): string {
+-  return path.basename(uri.fsPath);
++  return uri.path.split("/").pop() ?? "";
+ }
+diff --git a/src/test/assembly-order.test.ts b/src/test/assembly-order.test.ts
+new file mode 100644
+index 0000000..5968042
+--- /dev/null
++++ b/src/test/assembly-order.test.ts
+@@ -0,0 +1,43 @@
++import { describe, it } from "node:test";
++import assert from "node:assert/strict";
++import { prioritizeAssemblyBlocks } from "../assembly/order";
++
++describe("prioritizeAssemblyBlocks", () => {
++  it("keeps current-file functions first without dropping other blocks", () => {
++    const blocks = [
++      { header: "pkg.Helper STEXT", data: ["RET"] },
++      { header: "pkg.CurrentOne STEXT", data: ["RET"] },
++      { header: "pkg.Other STEXT", data: ["RET"] },
++      { header: "pkg.CurrentTwo STEXT", data: ["RET"] },
++    ];
++
++    const ordered = prioritizeAssemblyBlocks(blocks, [
++      "CurrentOne",
++      "CurrentTwo",
++    ]);
++
++    assert.deepStrictEqual(
++      ordered.map((block) => block.header),
++      [
++        "pkg.CurrentOne STEXT",
++        "pkg.CurrentTwo STEXT",
++        "pkg.Helper STEXT",
++        "pkg.Other STEXT",
++      ],
++    );
++  });
++
++  it("preserves original order when no current-file functions match", () => {
++    const blocks = [
++      { header: "pkg.First STEXT", data: ["RET"] },
++      { header: "pkg.Second STEXT", data: ["RET"] },
++    ];
++
++    const ordered = prioritizeAssemblyBlocks(blocks, ["Missing"]);
++
++    assert.deepStrictEqual(
++      ordered.map((block) => block.header),
++      ["pkg.First STEXT", "pkg.Second STEXT"],
++    );
++  });
++});
+\ No newline at end of file
+diff --git a/src/test/line-maps.test.ts b/src/test/line-maps.test.ts
+index 9910dcd..07e2ed2 100644
+--- a/src/test/line-maps.test.ts
++++ b/src/test/line-maps.test.ts
+@@ -11,13 +11,7 @@ describe("buildLineMaps", () => {
+       '0x0002 00002 (./pkg/bar.go:20) RET',
+     ].join("\n");
+ 
+-    const target: SourceFileMatchTarget = {
+-      absolute: "users/me/work/mod/pkg/foo.go",
+-      relative: "pkg/foo.go",
+-      basename: "foo.go",
+-    };
+-
+-    const { lineToSource, sourceToLines } = buildLineMaps(asm, target);
++    const { lineToSource, sourceToLines } = buildLineMaps(asm);
+ 
+     assert.deepStrictEqual(lineToSource.get(0), { srcFile: "./pkg/foo.go", srcLine: 10 });
+     assert.deepStrictEqual(lineToSource.get(1), { srcFile: "./pkg/foo.go", srcLine: 10 });
+@@ -33,13 +27,7 @@ describe("buildLineMaps", () => {
+       '0x0001 00001 (./pkg/foo.go:10) RET',
+     ].join("\n");
+ 
+-    const target: SourceFileMatchTarget = {
+-      absolute: "users/me/work/mod/pkg/foo.go",
+-      relative: "pkg/foo.go",
+-      basename: "foo.go",
+-    };
+-
+-    const { lineToSource, sourceToLines } = buildLineMaps(asm, target);
++    const { lineToSource, sourceToLines } = buildLineMaps(asm);
+ 
+     assert.strictEqual(lineToSource.has(0), false);
+     assert.deepStrictEqual(lineToSource.get(1), { srcFile: "./pkg/foo.go", srcLine: 10 });
+diff --git a/src/test/source-match.test.ts b/src/test/source-match.test.ts
+index 0a68b88..22e2d0e 100644
+--- a/src/test/source-match.test.ts
++++ b/src/test/source-match.test.ts
+@@ -51,4 +51,50 @@ describe("sourceMatch", () => {
+ 
+     assert.strictEqual(matchesSourceFile("pkg/bar.go", target), false);
+   });
++
++  // Windows-style paths from Go compiler output (e.g. C:/Users/...)
++  it("matches windows absolute path in asm output", () => {
++    const target: SourceFileMatchTarget = {
++      absolute: "c:/users/me/work/mod/pkg/foo.go",
++      relative: "pkg/foo.go",
++      basename: "foo.go",
++    };
++
++    assert.strictEqual(matchesSourceFile("C:\\Users\\me\\work\\mod\\pkg\\foo.go", target), true);
++  });
++
++  it("matches windows workspace-relative path in asm output", () => {
++    const target: SourceFileMatchTarget = {
++      absolute: "c:/users/me/work/mod/pkg/foo.go",
++      relative: "pkg/foo.go",
++      basename: "foo.go",
++    };
++
++    assert.strictEqual(matchesSourceFile(".\\pkg\\foo.go", target), true);
++  });
++
++  it("matches when asm has windows drive-letter path and target is unix-normalized", () => {
++    const target: SourceFileMatchTarget = {
++      absolute: "users/me/work/mod/pkg/foo.go",
++      relative: "pkg/foo.go",
++      basename: "foo.go",
++    };
++
++    // Go on Windows may emit absolute paths like C:/Users/...
++    assert.strictEqual(matchesSourceFile("C:/Users/me/work/mod/pkg/foo.go", target), true);
++  });
++
++  it("normalizes windows drive letter", () => {
++    assert.strictEqual(
++      normalizePathForCompare("C:\\Users\\Me\\Work\\pkg\\foo.go"),
++      "users/me/work/pkg/foo.go",
++    );
++  });
++
++  it("normalizes unix absolute path", () => {
++    assert.strictEqual(
++      normalizePathForCompare("/home/me/work/pkg/foo.go"),
++      "home/me/work/pkg/foo.go",
++    );
++  });
+ });
+diff --git a/src/view/lineMaps.ts b/src/view/lineMaps.ts
+index 0ead27c..403262f 100644
+--- a/src/view/lineMaps.ts
++++ b/src/view/lineMaps.ts
+@@ -1,5 +1,3 @@
+-import { SourceFileMatchTarget, matchesSourceFile } from "./sourceMatch";
+-
+ export interface SourceRef {
+   srcFile: string;
+   srcLine: number;
+@@ -15,14 +13,21 @@ function addSourceLineMapping(
+   sourceToLines.set(srcLine, existing);
+ }
+ 
+-export function buildLineMaps(
+-  asmText: string,
+-  sourceMatchTarget: SourceFileMatchTarget,
+-) {
++export function buildLineMaps(asmText: string) {
+   const lines = asmText.split("\n");
+   const lineToSource = new Map<number, SourceRef>();
+   const sourceToLines = new Map<number, number[]>();
+ 
++  extractLineInfo(lines, lineToSource, sourceToLines);
++
++  return { lineToSource, sourceToLines };
++}
++
++export function extractLineInfo(
++  lines: string[],
++  lineToSource: Map<number, SourceRef>,
++  sourceToLines: Map<number, number[]>,
++) {
+   lines.forEach((line, idx) => {
+     const match = line.match(/\(([^)]+\.go):(\d+)\)/);
+     if (!match) {
+@@ -33,10 +38,6 @@ export function buildLineMaps(
+     const srcLine = parseInt(match[2], 10);
+     lineToSource.set(idx, { srcFile: file, srcLine });
+ 
+-    if (matchesSourceFile(file, sourceMatchTarget)) {
+-      addSourceLineMapping(sourceToLines, srcLine, idx);
+-    }
++    addSourceLineMapping(sourceToLines, srcLine, idx);
+   });
+-
+-  return { lineToSource, sourceToLines };
+ }
+diff --git a/src/view/sourceMatch.ts b/src/view/sourceMatch.ts
+index 8fbfbe7..73ec0df 100644
+--- a/src/view/sourceMatch.ts
++++ b/src/view/sourceMatch.ts
+@@ -1,5 +1,3 @@
+-import path from "path";
+-
+ export interface SourceFileMatchTarget {
+   absolute: string;
+   relative?: string;
+@@ -9,6 +7,7 @@ export interface SourceFileMatchTarget {
+ export function normalizePathForCompare(file: string): string {
+   return file
+     .replace(/\\/g, "/")
++    .replace(/^[a-z]:/i, "")
+     .replace(/^\.\//, "")
+     .replace(/^\/+/, "")
+     .toLowerCase();
+@@ -19,22 +18,28 @@ export function matchesSourceFile(
+   target: SourceFileMatchTarget,
+ ): boolean {
+   const source = normalizePathForCompare(sourceFile);
++  const absolute = normalizePathForCompare(target.absolute);
++  const relative = target.relative
++    ? normalizePathForCompare(target.relative)
++    : undefined;
++  const basename = normalizePathForCompare(target.basename);
++
+   if (!source) {
+     return false;
+   }
+ 
+-  if (source === target.absolute || target.absolute.endsWith("/" + source)) {
++  if (source === absolute || absolute.endsWith("/" + source)) {
+     return true;
+   }
+ 
+   if (
+-    target.relative &&
+-    (source === target.relative ||
+-      source.endsWith("/" + target.relative) ||
+-      target.relative.endsWith("/" + source))
++    relative &&
++    (source === relative ||
++      source.endsWith("/" + relative) ||
++      relative.endsWith("/" + source))
+   ) {
+     return true;
+   }
+ 
+-  return path.posix.basename(source) === target.basename;
++  return (source.split("/").pop() ?? "") === basename;
+ }
+diff --git a/src/view/sourceMatchTarget.ts b/src/view/sourceMatchTarget.ts
+index 97f7090..08beacc 100644
+--- a/src/view/sourceMatchTarget.ts
++++ b/src/view/sourceMatchTarget.ts
+@@ -1,13 +1,14 @@
+-import path from "path";
+ import { Uri, workspace } from "vscode";
+ import { normalizePathForCompare, SourceFileMatchTarget } from "./sourceMatch";
+ 
+ export function createSourceMatchTarget(fileUri: Uri): SourceFileMatchTarget {
+-  const absolute = normalizePathForCompare(fileUri.fsPath);
+-  const basename = normalizePathForCompare(path.basename(fileUri.fsPath));
++  const absolute = normalizePathForCompare(fileUri.path);
++  const basename = normalizePathForCompare(fileUri.path.split("/").pop() ?? "");
+   const ws = workspace.getWorkspaceFolder(fileUri);
+   const relative = ws
+-    ? normalizePathForCompare(path.relative(ws.uri.fsPath, fileUri.fsPath))
++    ? normalizePathForCompare(
++        fileUri.path.substring(ws.uri.path.length).replace(/^\//, ""),
++      )
+     : undefined;
+ 
+   return {
+diff --git a/src/view/webview.ts b/src/view/webview.ts
+index c8ad439..02a0744 100644
+--- a/src/view/webview.ts
++++ b/src/view/webview.ts
+@@ -7,22 +7,18 @@ import {
+   ViewColumn,
+   WebviewPanel,
+   window,
+-  workspace,
+ } from "vscode";
+-import { getAsm } from "../assembly";
+-import { filename } from "../format";
++import { AssemblyBlock, streamAsm } from "../assembly";
++import { AssemblyContainer } from "../assembly/container";
+ import { GoEnvManager } from "../env";
+-import { buildLineMaps } from "./lineMaps";
+-import { createSourceMatchTarget } from "./sourceMatchTarget";
++import { filename } from "../format";
+ import { matchesSourceFile, SourceFileMatchTarget } from "./sourceMatch";
+-import { getHtml } from "./webviewHtml";
++import { createSourceMatchTarget } from "./sourceMatchTarget";
++import { getHtml, getHtmlAssembly } from "./webviewHtml";
+ 
+-function findSourceEditor(
+-  srcFile: string,
+-  sourceFileUri: Uri,
+-) {
++function findSourceEditor(srcFile: string, sourceFileUri: Uri) {
+   const primaryEditor = window.visibleTextEditors.find(
+-    (e) => e.document.uri.fsPath === sourceFileUri.fsPath,
++    (e) => e.document.uri.toString() === sourceFileUri.toString(),
+   );
+ 
+   return window.visibleTextEditors.find(
+@@ -40,8 +36,8 @@ export class AssemblyView implements Disposable {
+   private readonly sourceMatchTarget: SourceFileMatchTarget;
+ 
+   private _sourceHighlight: TextEditorDecorationType;
+-  private _sourceToLines: Map<number, number[]> = new Map();
+   private _disposables: Disposable[] = [];
++  private _asmContainer = new AssemblyContainer();
+ 
+   constructor(uri: Uri, envManager: GoEnvManager) {
+     this.fileUri = uri;
+@@ -60,11 +56,13 @@ export class AssemblyView implements Disposable {
+       ViewColumn.Beside,
+       { enableScripts: true },
+     );
+-    this.panel.webview.html = getHtml(
+-      "loading...",
+-      "",
+-      new Map(),
+-      this.sourceMatchTarget,
++    this.panel.webview.html = "loading...";
++    getHtml("loading...", "", new Map(), this.sourceMatchTarget).then(
++      (html) => {
++        if (this.panel.webview.html === "loading...") {
++          this.panel.webview.html = html;
++        }
++      },
+     );
+ 
+     // Handle messages from the webview (ASM hover → source highlight)
+@@ -77,7 +75,7 @@ export class AssemblyView implements Disposable {
+     // Handle cursor changes in source editor (source → ASM highlight)
+     this._disposables.push(
+       window.onDidChangeTextEditorSelection((e) => {
+-        if (e.textEditor.document.uri.fsPath === this.fileUri.fsPath) {
++        if (e.textEditor.document.uri.toString() === this.fileUri.toString()) {
+           this._syncFromSource(e.textEditor.selection.active.line + 1);
+         }
+       }),
+@@ -100,24 +98,41 @@ export class AssemblyView implements Disposable {
+ 
+   async update() {
+     try {
+-      const asm = await getAsm(
++      this._asmContainer.clear();
++
++      await streamAsm(
+         this.fileUri,
+         this.envManager.getEnvVars(),
+-        this.envManager.getGcFlags()
++        this.envManager.getGcFlags(),
++        this._addBlock.bind(this),
+       );
+-      const { lineToSource, sourceToLines } = buildLineMaps(
+-        asm,
++
++      await this.updateView();
++    } catch (err: any) {
++      this.panel.webview.html = await getHtml(
++        `got an error: ${JSON.stringify({ ...err }, undefined, 2)}`,
++        this.filename,
++        new Map(),
+         this.sourceMatchTarget,
+       );
+-      this._sourceToLines = sourceToLines;
+-      this.panel.webview.html = getHtml(
+-        asm,
++    }
++  }
++
++  async updateView() {
++    try {
++      let b = this._asmContainer.blocks;
++      if (b.length > 1000) {
++        b = b.slice(0, 1000);
++      }
++
++      this.panel.webview.html = await getHtmlAssembly(
++        b,
+         this.filename,
+-        lineToSource,
++        this._asmContainer.lineToSource,
+         this.sourceMatchTarget,
+       );
+     } catch (err: any) {
+-      this.panel.webview.html = getHtml(
++      this.panel.webview.html = await getHtml(
+         `got an error: ${JSON.stringify({ ...err }, undefined, 2)}`,
+         this.filename,
+         new Map(),
+@@ -126,6 +141,12 @@ export class AssemblyView implements Disposable {
+     }
+   }
+ 
++  private _addBlock(b: AssemblyBlock) {
++    
++
++    this._asmContainer.addBlock(b);
++  }
++
+   private _handleWebviewMessage(msg: unknown) {
+     if (!msg || typeof msg !== "object") {
+       return;
+@@ -139,32 +160,9 @@ export class AssemblyView implements Disposable {
+       }
+     } else if (m["type"] === "hoverEnd") {
+       this._clearSourceHighlight();
+-    } else if (m["type"] === "export") {
+-      const content = m["content"];
+-      if (typeof content === "string") {
+-        this._exportAssembly(content);
+-      }
+     }
+   }
+ 
+-  private async _exportAssembly(content: string) {
+-    const defaultUri = Uri.file(this.filename.replace(/\.go$/, ".s"));
+-    const uri = await window.showSaveDialog({
+-      defaultUri,
+-      filters: {
+-        "Assembly files": ["s"],
+-        "Text files": ["txt"],
+-        "All files": ["*"],
+-      },
+-      saveLabel: "Export Assembly",
+-    });
+-    if (!uri) {
+-      return;
+-    }
+-    await workspace.fs.writeFile(uri, new TextEncoder().encode(content));
+-    window.showInformationMessage(`Assembly exported to ${uri.fsPath}`);
+-  }
+-
+   private _highlightSourceLine(srcFile: string, srcLine: number) {
+     const editor = findSourceEditor(srcFile, this.fileUri);
+     if (!editor) {
+@@ -188,7 +186,8 @@ export class AssemblyView implements Disposable {
+   }
+ 
+   private _syncFromSource(sourceLine: number) {
+-    const asmLines = this._sourceToLines.get(sourceLine) ?? [];
++    const asmLines = this._asmContainer.sourceToLines.get(sourceLine) ?? [];
++
+     this.panel.webview.postMessage({
+       type: "highlightLines",
+       lines: asmLines,
+diff --git a/src/view/webviewHtml.ts b/src/view/webviewHtml.ts
+index cd7684c..49d0958 100644
+--- a/src/view/webviewHtml.ts
++++ b/src/view/webviewHtml.ts
+@@ -1,5 +1,8 @@
++import { AssemblyBlock } from "../assembly";
++import { logger } from "../logger/logger";
+ import { SourceRef } from "./lineMaps";
+ import { SourceFileMatchTarget, matchesSourceFile } from "./sourceMatch";
++import { ProgressLocation, window } from "vscode";
+ 
+ interface RenderBlock {
+   header: string;
+@@ -16,11 +19,12 @@ function escapeHtml(text: string): string {
+ 
+ function syntaxHighlight(escaped: string): string {
+   return escaped
+-    .replace(/(0x[0-9a-f]+)/g, '<span class="addr">$1</span>')
++    .replace(/(0x[0-9a-fA-F]+)/g, '<span class="addr">$1</span>')
+     .replace(
+-      /\b(AX|AL|BX|CX|DX|SI|DI|R[0-9]+|SP|SB|BP)\b/g,
++      /\b(AX|AL|BX|BL|CX|CL|DX|DL|SI|DI|R[0-9]+|SP|SB|BP|FP|PC|TLS)\b/g,
+       '<span class="reg">$1</span>',
+     )
++    .replace(/(\$-?\d+)/g, '<span class="imm">$1</span>')
+     .replace(/\b([A-Z]{3,})\b/g, '<span class="op">$1</span>')
+     .replace(/\(([^)]+\.go:\d+)\)/g, '<span class="src">($1)</span>')
+     .replace(/(#.*$|\/\/.*$)/g, '<span class="comment">$1</span>');
+@@ -72,6 +76,19 @@ function parseRenderBlocks(
+   return blocks.filter((b) => b.lines.length > 0);
+ }
+ 
++function convertToRenderBlocks(
++  rawBlocks: AssemblyBlock[],
++  lineToSource: Map<number, SourceRef>,
++  sourceMatchTarget: SourceFileMatchTarget,
++): RenderBlock[] {
++  return rawBlocks.map((block) => ({
++    header: block.header,
++    lines: block.data.map((line, idx) =>
++      createAssemblyLine(line, idx, lineToSource, sourceMatchTarget),
++    ),
++  }));
++}
++
+ function renderBodyContent(content: RenderBlock[] | string[]): string {
+   const isBlocks =
+     content.length > 0 &&
+@@ -94,7 +111,10 @@ function renderBodyContent(content: RenderBlock[] | string[]): string {
+     .join("\n");
+ }
+ 
+-function renderHtml(filename: string, content: RenderBlock[] | string[]): string {
++function renderHtml(
++  filename: string,
++  content: RenderBlock[] | string[],
++): string {
+   const bodyContent = renderBodyContent(content);
+ 
+   return `
+@@ -103,8 +123,9 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
+ <style>
+   body { font-family: var(--vscode-editor-font-family, monospace); background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); padding: 10px; }
+   .addr { color: var(--vscode-editorLineNumber-foreground); }
+-  .op { color: var(--vscode-symbolIcon-keywordColor); }
+-  .reg { color: var(--vscode-symbolIcon-variableColor); }
++  .op { color: var(--vscode-symbolIcon-keywordForeground); }
++  .reg { color: var(--vscode-symbolIcon-variableForeground); }
++  .imm { color: var(--vscode-symbolIcon-numberForeground); }
+   .comment { color: var(--vscode-descriptionForeground); font-style: italic; }
+   .src { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); padding: 2px 4px; border-radius: 3px; }
+   .line { white-space: pre; min-height: 1em; padding: 0 10px; display: block; }
+@@ -162,18 +183,6 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
+     font-size: 13px;
+     user-select: none;
+   }
+-  .search-bar button {
+-    background: var(--vscode-button-background);
+-    color: var(--vscode-button-foreground);
+-    border: none;
+-    border-radius: 4px;
+-    padding: 4px 12px;
+-    font-size: 13px;
+-    cursor: pointer;
+-    white-space: nowrap;
+-  }
+-  .search-bar button:hover { background: var(--vscode-button-hoverBackground); }
+-  .search-bar button:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+   #matchCount { color: var(--vscode-descriptionForeground); font-size: 12px; }
+   h3 { margin: 6px 0 2px 0; padding: 0 10px; }
+   #asm { padding: 4px 0 10px 0; }
+@@ -185,7 +194,6 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
+   <label><input type="checkbox" id="filterMode" /> Filter lines</label>
+   <label><input type="checkbox" id="sourceOnly" checked /> Source file only</label>
+   <span id="matchCount"></span>
+-  <button id="exportBtn" title="Export visible assembly to a file">Export</button>
+ </div>
+ <h3>Go Assembly: ${escapeHtml(filename)}</h3>
+ <div id="asm">${bodyContent}</div>
+@@ -242,20 +250,6 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
+     sourceOnly.addEventListener('change', applySearch);
+     applySearch();
+ 
+-    // Export visible assembly lines
+-    var exportBtn = document.getElementById('exportBtn');
+-    if (exportBtn) {
+-      exportBtn.addEventListener('click', function () {
+-        var visibleLines = [];
+-        lines.forEach(function (line) {
+-          if (!line.classList.contains('no-match')) {
+-            visibleLines.push(line.textContent);
+-          }
+-        });
+-        vscode.postMessage({ type: 'export', content: visibleLines.join('\n') });
+-      });
+-    }
+-
+     // Hover over ASM line -> highlight source
+     lines.forEach(function (line) {
+       const srcFile = line.getAttribute('data-src-file');
+@@ -299,25 +293,78 @@ function renderHtml(filename: string, content: RenderBlock[] | string[]): string
+ `;
+ }
+ 
+-export function getHtml(
++export async function getHtml(
+   asm: string,
+   filename: string,
+   lineToSource: Map<number, SourceRef>,
+   sourceMatchTarget: SourceFileMatchTarget,
+ ) {
+-  const rawLines = asm.split("\n");
+-  const validBlocks = parseRenderBlocks(
+-    rawLines,
+-    lineToSource,
+-    sourceMatchTarget,
+-  );
+-
+-  if (validBlocks.length > 0) {
+-    return renderHtml(filename, validBlocks);
+-  }
++  return getHtmlLines(asm.split("\n"), filename, lineToSource, sourceMatchTarget);
++}
++
++export async function getHtmlLines(
++  rawLines: string[],
++  filename: string,
++  lineToSource: Map<number, SourceRef>,
++  sourceMatchTarget: SourceFileMatchTarget,
++) {
++  const popts = {
++    location: ProgressLocation.Window,
++    cancellable: true,
++    title: "Generating assembly view...",
++  };
++
++  return window.withProgress(popts, async (progress, token) => {
++    const start = performance.now();
++    const validBlocks = parseRenderBlocks(
++      rawLines,
++      lineToSource,
++      sourceMatchTarget,
++    );
++
++    if (validBlocks.length > 0) {
++      logger.info(
++        `Parsed assembly into ${validBlocks.length} blocks in ${(performance.now() - start).toFixed(2)}ms`,
++      );
++
++      return renderHtml(filename, validBlocks);
++    }
++
++    const processedLines = rawLines.map((line, idx) =>
++      createAssemblyLine(line, idx, lineToSource, sourceMatchTarget),
++    );
++    return renderHtml(filename, processedLines);
++  });
++}
+ 
+-  const processedLines = rawLines.map((line, idx) =>
+-    createAssemblyLine(line, idx, lineToSource, sourceMatchTarget),
+-  );
+-  return renderHtml(filename, processedLines);
++export async function getHtmlAssembly(
++  rawLines: AssemblyBlock[],
++  filename: string,
++  lineToSource: Map<number, SourceRef>,
++  sourceMatchTarget: SourceFileMatchTarget,
++) {
++  const popts = {
++    location: ProgressLocation.Window,
++    cancellable: true,
++    title: "Generating assembly view...",
++  };
++
++  return window.withProgress(popts, async () => {
++    const start = performance.now();
++    const validBlocks = convertToRenderBlocks(
++      rawLines,
++      lineToSource,
++      sourceMatchTarget,
++    );
++
++    if (validBlocks.length > 0) {
++      logger.info(
++        `Parsed assembly into ${validBlocks.length} blocks in ${(performance.now() - start).toFixed(2)}ms`,
++      );
++
++      return renderHtml(filename, validBlocks);
++    }
++
++    return renderHtml(filename, ["issue rendering assembly"]);
++  });
+ }
