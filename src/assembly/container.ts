@@ -46,6 +46,7 @@ export class AssemblyContainer {
     this.lineToSource.clear();
     this.sourceToLines.clear();
     this.blocks = [];
+    this.constants = [];
     this._lineOffset = 0;
   }
 }
