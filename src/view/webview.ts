@@ -112,8 +112,6 @@ export class AssemblyView implements Disposable {
   async update() {
     const generation = ++this._updateGeneration;
 
-    void this.panel.webview.postMessage({ type: "updateStatus", message: "Loading assembly\u2026" });
-
     try {
       this._asmContainer.clear();
 
@@ -148,12 +146,12 @@ export class AssemblyView implements Disposable {
     try {
       const funcs = await getFunctions(this.fileUri);
       const prioritized = prioritizeAssemblyBlocks(this._asmContainer.blocks, funcs);
-      this._asmContainer.rebuildMaps(prioritized, (file) => matchesSourceFile(file, this.sourceMatchTarget));
 
       let b = prioritized;
       if (b.length > 1000) {
         b = b.slice(0, 1000);
       }
+      this._asmContainer.rebuildMaps(b, (file) => matchesSourceFile(file, this.sourceMatchTarget));
 
       const html = getAsmContentHtml(b, this._asmContainer.lineToSource, this.sourceMatchTarget);
       void this.panel.webview.postMessage({ type: "updateAsm", html });
