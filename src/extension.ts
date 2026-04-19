@@ -11,7 +11,7 @@ import { logger } from "./logger/logger";
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 
-  canRun().then((ok) => {
+  void canRun().then((ok) => {
     if (ok) {
       context.subscriptions.push(...init(context));
     }

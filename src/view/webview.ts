@@ -9,7 +9,7 @@ import {
   WebviewPanel,
   window,
 } from "vscode";
-import { AssemblyBlock, streamAsm } from "../assembly";
+import { streamAsm } from "../assembly";
 import { AssemblyContainer } from "../assembly/container";
 import { prioritizeAssemblyBlocks } from "../assembly/order";
 import { GoEnvManager } from "../env";
@@ -127,7 +127,7 @@ export class AssemblyView implements Disposable {
         this.envManager.getGcFlags(),
         (b) => {
           if (generation === this._updateGeneration) {
-            this._addBlock(b);
+            this._asmContainer.addBlock(b);
           }
         },
       );
@@ -137,22 +137,18 @@ export class AssemblyView implements Disposable {
       }
 
       await this.updateView();
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (generation !== this._updateGeneration) {
         return;
       }
+      const errDetail = err instanceof Error ? err.message : JSON.stringify(err, undefined, 2);
       this.panel.webview.html = await getHtml(
-        `got an error: ${JSON.stringify({ ...err }, undefined, 2)}`,
+        `got an error: ${errDetail}`,
         this.filename,
         new Map(),
         this.sourceMatchTarget,
       );
     }
-  }
-
-  // Adds a new assembly block to the container. This is called for each block as they are streamed in, allowing for incremental rendering.
-  private _addBlock(b: AssemblyBlock) {
-    this._asmContainer.addBlock(b);
   }
 
   /** Renders the current assembly blocks in the webview.
@@ -174,9 +170,10 @@ export class AssemblyView implements Disposable {
         this._asmContainer.lineToSource,
         this.sourceMatchTarget,
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errDetail = err instanceof Error ? err.message : JSON.stringify(err, undefined, 2);
       this.panel.webview.html = await getHtml(
-        `got an error: ${JSON.stringify({ ...err }, undefined, 2)}`,
+        `got an error: ${errDetail}`,
         this.filename,
         new Map(),
         this.sourceMatchTarget,
