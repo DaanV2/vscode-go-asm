@@ -2,6 +2,7 @@ export interface AssemblyBlock {
   header: string;
   data: string[];
   sortIndex?: number;
+  
 }
 
 export namespace AssemblyBlock {
@@ -31,5 +32,34 @@ export namespace AssemblyBlock {
     }
 
     return result.filter((e) => e.header.length > 0 && e.data.length > 0);
+  }
+
+  // isolate grabs the last possible set of blocks, used for streaming, returns the offset of the isolated text, or -1 if no isolation was possible
+  export function isolate(text: string): number {
+    // Example: the last line is the /tcode of a block,
+    // the foo:bar is an example of a header, but we aren't sure yet that its finished
+
+    // \tcode
+    // foo:bar
+    let foundHeader = false;
+
+    // Walk backwards
+    for (let i = text.length - 1; i >= 0; i--) {
+      // 
+      const c = text[i];
+      if (c === "\n" || c === "\r") {
+        if (foundHeader) {
+          if (text[i + 1] === "\t") {
+            return i + 1;
+          }
+        } else {
+          if (text[i + 1] !== "\t") {
+            foundHeader = true;
+          }
+        }
+      }
+    }
+
+    return -1;
   }
 }

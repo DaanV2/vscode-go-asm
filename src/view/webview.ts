@@ -8,13 +8,13 @@ import {
   WebviewPanel,
   window,
 } from "vscode";
-import { getAsm } from "../assembly";
-import { filename } from "../format";
+import { AssemblyBlock, streamAsm } from "../assembly";
+import { AssemblyContainer } from "../assembly/container";
 import { GoEnvManager } from "../env";
-import { buildLineMaps } from "./lineMaps";
-import { createSourceMatchTarget } from "./sourceMatchTarget";
+import { filename } from "../format";
 import { matchesSourceFile, SourceFileMatchTarget } from "./sourceMatch";
-import { getHtml } from "./webviewHtml";
+import { createSourceMatchTarget } from "./sourceMatchTarget";
+import { getHtml, getHtmlAssembly } from "./webviewHtml";
 
 function findSourceEditor(srcFile: string, sourceFileUri: Uri) {
   const primaryEditor = window.visibleTextEditors.find(
@@ -36,8 +36,8 @@ export class AssemblyView implements Disposable {
   private readonly sourceMatchTarget: SourceFileMatchTarget;
 
   private _sourceHighlight: TextEditorDecorationType;
-  private _sourceToLines: Map<number, number[]> = new Map();
   private _disposables: Disposable[] = [];
+  private _asmContainer = new AssemblyContainer();
 
   constructor(uri: Uri, envManager: GoEnvManager) {
     this.fileUri = uri;
@@ -98,20 +98,37 @@ export class AssemblyView implements Disposable {
 
   async update() {
     try {
-      const asm = await getAsm(
+      this._asmContainer.clear();
+
+      await streamAsm(
         this.fileUri,
         this.envManager.getEnvVars(),
         this.envManager.getGcFlags(),
+        this._addBlock.bind(this),
       );
-      const { lineToSource, sourceToLines } = buildLineMaps(
-        asm,
+
+      await this.updateView();
+    } catch (err: any) {
+      this.panel.webview.html = await getHtml(
+        `got an error: ${JSON.stringify({ ...err }, undefined, 2)}`,
+        this.filename,
+        new Map(),
         this.sourceMatchTarget,
       );
-      this._sourceToLines = sourceToLines;
-      this.panel.webview.html = await getHtml(
-        asm,
+    }
+  }
+
+  async updateView() {
+    try {
+      let b = this._asmContainer.blocks;
+      if (b.length > 1000) {
+        b = b.slice(0, 1000);
+      }
+
+      this.panel.webview.html = await getHtmlAssembly(
+        b,
         this.filename,
-        lineToSource,
+        this._asmContainer.lineToSource,
         this.sourceMatchTarget,
       );
     } catch (err: any) {
@@ -122,6 +139,12 @@ export class AssemblyView implements Disposable {
         this.sourceMatchTarget,
       );
     }
+  }
+
+  private _addBlock(b: AssemblyBlock) {
+    
+
+    this._asmContainer.addBlock(b);
   }
 
   private _handleWebviewMessage(msg: unknown) {
@@ -163,7 +186,8 @@ export class AssemblyView implements Disposable {
   }
 
   private _syncFromSource(sourceLine: number) {
-    const asmLines = this._sourceToLines.get(sourceLine) ?? [];
+    const asmLines = this._asmContainer.sourceToLines.get(sourceLine) ?? [];
+
     this.panel.webview.postMessage({
       type: "highlightLines",
       lines: asmLines,

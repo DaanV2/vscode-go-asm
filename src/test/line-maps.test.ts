@@ -11,13 +11,7 @@ describe("buildLineMaps", () => {
       '0x0002 00002 (./pkg/bar.go:20) RET',
     ].join("\n");
 
-    const target: SourceFileMatchTarget = {
-      absolute: "users/me/work/mod/pkg/foo.go",
-      relative: "pkg/foo.go",
-      basename: "foo.go",
-    };
-
-    const { lineToSource, sourceToLines } = buildLineMaps(asm, target);
+    const { lineToSource, sourceToLines } = buildLineMaps(asm);
 
     assert.deepStrictEqual(lineToSource.get(0), { srcFile: "./pkg/foo.go", srcLine: 10 });
     assert.deepStrictEqual(lineToSource.get(1), { srcFile: "./pkg/foo.go", srcLine: 10 });
@@ -33,13 +27,7 @@ describe("buildLineMaps", () => {
       '0x0001 00001 (./pkg/foo.go:10) RET',
     ].join("\n");
 
-    const target: SourceFileMatchTarget = {
-      absolute: "users/me/work/mod/pkg/foo.go",
-      relative: "pkg/foo.go",
-      basename: "foo.go",
-    };
-
-    const { lineToSource, sourceToLines } = buildLineMaps(asm, target);
+    const { lineToSource, sourceToLines } = buildLineMaps(asm);
 
     assert.strictEqual(lineToSource.has(0), false);
     assert.deepStrictEqual(lineToSource.get(1), { srcFile: "./pkg/foo.go", srcLine: 10 });

@@ -1,3 +1,4 @@
+import { AssemblyBlock } from "../assembly";
 import { logger } from "../logger/logger";
 import { SourceRef } from "./lineMaps";
 import { SourceFileMatchTarget, matchesSourceFile } from "./sourceMatch";
@@ -73,6 +74,19 @@ function parseRenderBlocks(
   });
 
   return blocks.filter((b) => b.lines.length > 0);
+}
+
+function convertToRenderBlocks(
+  rawBlocks: AssemblyBlock[],
+  lineToSource: Map<number, SourceRef>,
+  sourceMatchTarget: SourceFileMatchTarget,
+): RenderBlock[] {
+  return rawBlocks.map((block) => ({
+    header: block.header,
+    lines: block.data.map((line, idx) =>
+      createAssemblyLine(line, idx, lineToSource, sourceMatchTarget),
+    ),
+  }));
 }
 
 function renderBodyContent(content: RenderBlock[] | string[]): string {
@@ -285,6 +299,15 @@ export async function getHtml(
   lineToSource: Map<number, SourceRef>,
   sourceMatchTarget: SourceFileMatchTarget,
 ) {
+  return getHtmlLines(asm.split("\n"), filename, lineToSource, sourceMatchTarget);
+}
+
+export async function getHtmlLines(
+  rawLines: string[],
+  filename: string,
+  lineToSource: Map<number, SourceRef>,
+  sourceMatchTarget: SourceFileMatchTarget,
+) {
   const popts = {
     location: ProgressLocation.Window,
     cancellable: true,
@@ -293,7 +316,6 @@ export async function getHtml(
 
   return window.withProgress(popts, async (progress, token) => {
     const start = performance.now();
-    const rawLines = asm.split("\n");
     const validBlocks = parseRenderBlocks(
       rawLines,
       lineToSource,
@@ -312,5 +334,37 @@ export async function getHtml(
       createAssemblyLine(line, idx, lineToSource, sourceMatchTarget),
     );
     return renderHtml(filename, processedLines);
+  });
+}
+
+export async function getHtmlAssembly(
+  rawLines: AssemblyBlock[],
+  filename: string,
+  lineToSource: Map<number, SourceRef>,
+  sourceMatchTarget: SourceFileMatchTarget,
+) {
+  const popts = {
+    location: ProgressLocation.Window,
+    cancellable: true,
+    title: "Generating assembly view...",
+  };
+
+  return window.withProgress(popts, async () => {
+    const start = performance.now();
+    const validBlocks = convertToRenderBlocks(
+      rawLines,
+      lineToSource,
+      sourceMatchTarget,
+    );
+
+    if (validBlocks.length > 0) {
+      logger.info(
+        `Parsed assembly into ${validBlocks.length} blocks in ${(performance.now() - start).toFixed(2)}ms`,
+      );
+
+      return renderHtml(filename, validBlocks);
+    }
+
+    return renderHtml(filename, ["issue rendering assembly"]);
   });
 }

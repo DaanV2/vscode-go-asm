@@ -24,7 +24,7 @@ export async function executeCommand(
   command: "go" | "gopls",
   args: string[],
   options?: CommandOptions,
-  token?: CancellationToken
+  token?: CancellationToken,
 ): Promise<CommandOutput> {
   return new Promise((resolve, reject) => {
     const infoCommand = command + " " + args.join(" ");
@@ -59,6 +59,57 @@ export async function executeCommand(
         stderr: Buffer.concat(stderrChunks).toString(),
         code,
       });
+    });
+
+    // Handle cancellation
+    if (token) {
+      token.onCancellationRequested(() => {
+        cprocess.kill();
+        reject(new Error("command cancelled"));
+      });
+    }
+  });
+}
+
+// streaming version of executeCommand, allowing processing stdout/stderr in real time via callbacks
+export async function streamExecuteCommand(
+  command: "go" | "gopls",
+  args: string[],
+  options?: CommandOptions,
+  token?: CancellationToken,
+  stdOutCallback?: (data: Buffer) => void,
+  stdErrCallback?: (data: Buffer) => void,
+): Promise<Pick<CommandOutput, "code">> {
+  return new Promise((resolve, reject) => {
+    const infoCommand = command + " " + args.join(" ");
+    logger.info("executing command: " + infoCommand, options);
+
+    const cprocess = spawn(command, args, {
+      shell: false,
+      cwd: options?.cwd,
+      env: { ...process.env, ...options?.env },
+    });
+
+    if (stdOutCallback) {
+      cprocess.stdout.on("data", (data: Buffer) => {
+        stdOutCallback(data);
+      });
+    }
+
+    if (stdErrCallback) {
+      cprocess.stderr.on("data", (data: Buffer) => {
+        stdErrCallback(data);
+      });
+    }
+
+    cprocess.on("error", (err) => {
+      logger.error("problem with command: " + infoCommand, options, err);
+      reject(err);
+    });
+
+    cprocess.on("close", (code: number | null) => {
+      logger.info("command done: " + infoCommand);
+      resolve({ code });
     });
 
     // Handle cancellation
