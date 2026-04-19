@@ -55,6 +55,7 @@ export class AssemblyView implements Disposable {
   private _sourceHighlight: TextEditorDecorationType;
   private _disposables: Disposable[] = [];
   private _asmContainer = new AssemblyContainer();
+  private _updateGeneration = 0;
 
   constructor(uri: Uri, envManager: GoEnvManager) {
     this.fileUri = uri;
@@ -115,6 +116,8 @@ export class AssemblyView implements Disposable {
 
   /** Triggers an update of the assembly view, re-fetching and re-rendering the assembly. */
   async update() {
+    const generation = ++this._updateGeneration;
+
     try {
       this._asmContainer.clear();
 
@@ -122,11 +125,22 @@ export class AssemblyView implements Disposable {
         this.fileUri,
         this.envManager.getEnvVars(),
         this.envManager.getGcFlags(),
-        this._addBlock.bind(this),
+        (b) => {
+          if (generation === this._updateGeneration) {
+            this._addBlock(b);
+          }
+        },
       );
+
+      if (generation !== this._updateGeneration) {
+        return;
+      }
 
       await this.updateView();
     } catch (err: any) {
+      if (generation !== this._updateGeneration) {
+        return;
+      }
       this.panel.webview.html = await getHtml(
         `got an error: ${JSON.stringify({ ...err }, undefined, 2)}`,
         this.filename,

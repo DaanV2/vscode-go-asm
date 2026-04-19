@@ -155,7 +155,21 @@ class goStreamHandler {
     }
   }
 
-  finish() {}
+  finish() {
+    if (this._data.length === 0) {
+      return;
+    }
+    const blocks = AssemblyBlock.parse(this._data);
+    this._data = "";
+    blocks.forEach((block) => {
+      if (this._workspaceDir) {
+        block.data = block.data.map((line) =>
+          relativizeAsmLine(line, this._workspaceDir!),
+        );
+      }
+      this.asmCallback(block);
+    });
+  }
 }
 
 function printAssemblyInfo(packageDir: string, cwd: string | undefined) {
