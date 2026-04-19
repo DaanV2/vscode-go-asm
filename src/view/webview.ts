@@ -17,7 +17,7 @@ import { filename } from "../format";
 import { getFunctions } from "../go/dependencies";
 import { matchesSourceFile, SourceFileMatchTarget } from "./sourceMatch";
 import { createSourceMatchTarget } from "./sourceMatchTarget";
-import { getHtml, getHtmlAssembly } from "./webviewHtml";
+import { getShellHtml, getAsmContentHtml } from "./webviewHtml";
 
 /**
  * Finds the best matching source editor for the given source file.
@@ -74,14 +74,8 @@ export class AssemblyView implements Disposable {
       ViewColumn.Beside,
       { enableScripts: true },
     );
-    this.panel.webview.html = "loading...";
-    getHtml("loading...", "", new Map(), this.sourceMatchTarget).then(
-      (html) => {
-        if (this.panel.webview.html === "loading...") {
-          this.panel.webview.html = html;
-        }
-      },
-    );
+    // Set the shell once — all subsequent assembly updates go through postMessage
+    this.panel.webview.html = getShellHtml(this.filename);
 
     // Handle messages from the webview (ASM hover → source highlight)
     this._disposables.push(
@@ -118,6 +112,8 @@ export class AssemblyView implements Disposable {
   async update() {
     const generation = ++this._updateGeneration;
 
+    void this.panel.webview.postMessage({ type: "updateStatus", message: "Loading assembly\u2026" });
+
     try {
       this._asmContainer.clear();
 
@@ -142,12 +138,7 @@ export class AssemblyView implements Disposable {
         return;
       }
       const errDetail = err instanceof Error ? err.message : JSON.stringify(err, undefined, 2);
-      this.panel.webview.html = await getHtml(
-        `got an error: ${errDetail}`,
-        this.filename,
-        new Map(),
-        this.sourceMatchTarget,
-      );
+      void this.panel.webview.postMessage({ type: "updateStatus", message: `Error: ${errDetail}` });
     }
   }
 
@@ -164,20 +155,11 @@ export class AssemblyView implements Disposable {
         b = b.slice(0, 1000);
       }
 
-      this.panel.webview.html = await getHtmlAssembly(
-        b,
-        this.filename,
-        this._asmContainer.lineToSource,
-        this.sourceMatchTarget,
-      );
+      const html = getAsmContentHtml(b, this._asmContainer.lineToSource, this.sourceMatchTarget);
+      void this.panel.webview.postMessage({ type: "updateAsm", html });
     } catch (err: unknown) {
       const errDetail = err instanceof Error ? err.message : JSON.stringify(err, undefined, 2);
-      this.panel.webview.html = await getHtml(
-        `got an error: ${errDetail}`,
-        this.filename,
-        new Map(),
-        this.sourceMatchTarget,
-      );
+      void this.panel.webview.postMessage({ type: "updateStatus", message: `Error: ${errDetail}` });
     }
   }
 
