@@ -51,6 +51,10 @@
       {
         "command": "daanv2-go-asm.toggle-optimizations",
         "title": "Go ASM: Toggle Compiler Optimizations"
+      },
+      {
+        "command": "daanv2-go-asm.toggle-external-filter",
+        "title": "Go ASM: Toggle External Package Filter"
       }
     ],
     "menus": {

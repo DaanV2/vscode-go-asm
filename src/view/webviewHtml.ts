@@ -48,33 +48,6 @@ function createAssemblyLine(
   return `<span class="line"${dataAttrs}>${styledLine}</span>`;
 }
 
-function parseRenderBlocks(
-  rawLines: string[],
-  lineToSource: Map<number, SourceRef>,
-  sourceMatchTarget: SourceFileMatchTarget,
-): RenderBlock[] {
-  const blocks: RenderBlock[] = [];
-  let currentBlock: RenderBlock | null = null;
-
-  rawLines.forEach((line, idx) => {
-    if (/^# /.test(line)) {
-      currentBlock = { header: line.slice(2).trim(), lines: [] };
-      blocks.push(currentBlock);
-      return;
-    }
-
-    if (line.startsWith("#") || !currentBlock) {
-      return;
-    }
-
-    currentBlock.lines.push(
-      createAssemblyLine(line, idx, lineToSource, sourceMatchTarget),
-    );
-  });
-
-  return blocks.filter((b) => b.lines.length > 0);
-}
-
 function convertToRenderBlocks(
   rawBlocks: AssemblyBlock[],
   lineToSource: Map<number, SourceRef>,

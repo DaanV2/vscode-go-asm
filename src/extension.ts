@@ -58,6 +58,14 @@ function init(context: vscode.ExtensionContext) {
         documentTracker.updateAll();
       }
     ),
+    vscode.commands.registerCommand(
+      "daanv2-go-asm.toggle-external-filter",
+      async () => {
+        await envManager.toggleExternalFilter();
+        // Refresh all open assembly views
+        documentTracker.updateAll();
+      }
+    ),
     // Events
     vscode.workspace.onDidSaveTextDocument((e) => {
       if (!e.uri.path.endsWith(".go")) {

@@ -10,6 +10,9 @@ export interface GoEnvConfig {
   GOFLAGS?: string;
   GOEXPERIMENT?: string;
   disableOptimizations?: boolean;
+  /** When true (default), only assembly blocks from the project's own module are shown;
+   *  all external packages (stdlib, runtime, third-party deps) are hidden. */
+  hideExternalPackages?: boolean;
 }
 
 const STATE_KEY = "goenv";
@@ -95,6 +98,7 @@ export class GoEnvManager implements vscode.Disposable {
   private readonly goArchItem: vscode.StatusBarItem;
   private readonly goOSItem: vscode.StatusBarItem;
   private readonly goOptimizationsItem: vscode.StatusBarItem;
+  private readonly goInternalFilterItem: vscode.StatusBarItem;
 
   constructor(context: vscode.ExtensionContext) {
     this.state = context.workspaceState;
@@ -121,10 +125,19 @@ export class GoEnvManager implements vscode.Disposable {
     this.goOptimizationsItem.tooltip =
       "Toggle Go compiler optimizations (affects -gcflags)";
 
+    this.goInternalFilterItem = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Left,
+      7
+    );
+    this.goInternalFilterItem.command = "daanv2-go-asm.toggle-external-filter";
+    this.goInternalFilterItem.tooltip =
+      "Toggle visibility of Go runtime/internal package assembly blocks";
+
     this.updateStatusBar();
     this.goArchItem.show();
     this.goOSItem.show();
     this.goOptimizationsItem.show();
+    this.goInternalFilterItem.show();
   }
 
   private getConfig(): GoEnvConfig {
@@ -144,6 +157,13 @@ export class GoEnvManager implements vscode.Disposable {
       this.goOptimizationsItem.text = `$(debug-step-over) No Optimizations`;
     } else {
       this.goOptimizationsItem.text = `$(zap) Optimized`;
+    }
+    // hideExternalPackages defaults to true when undefined
+    const filterEnabled = config.hideExternalPackages !== false;
+    if (filterEnabled) {
+      this.goInternalFilterItem.text = `$(filter) Hide Externals`;
+    } else {
+      this.goInternalFilterItem.text = `$(filter-filled) Show Externals`;
     }
   }
 
@@ -265,7 +285,29 @@ export class GoEnvManager implements vscode.Disposable {
     vscode.window.showInformationMessage(`Go compiler optimizations ${state}`);
   }
 
-  /** Returns the -gcflags argument for go build based on the current optimizations setting. */
+  async toggleExternalFilter(): Promise<void> {
+    const config = this.getConfig();
+    // defaults to true, so toggling from undefined/true → false, false → true
+    const current = config.hideExternalPackages !== false;
+    const newConfig = { ...config, hideExternalPackages: !current };
+    await this.setConfig(newConfig);
+    const state = newConfig.hideExternalPackages
+      ? "hidden (only showing your project's assembly)"
+      : "visible (showing all packages including stdlib and deps)";
+    logger.info("external filter toggled", {
+      hideExternalPackages: newConfig.hideExternalPackages,
+    });
+    vscode.window.showInformationMessage(
+      `External assembly blocks are now ${state}`
+    );
+  }
+
+  /** Returns true when only the user's own module blocks should be shown. Defaults to true. */
+  getHideExternalPackages(): boolean {
+    return this.getConfig().hideExternalPackages !== false;
+  }
+
+
   getGcFlags(): string {
     const config = this.getConfig();
     const flags = ["-S"];
@@ -320,6 +362,12 @@ export class GoEnvManager implements vscode.Disposable {
         detail:
           "Toggle compiler optimizations (-gcflags=-S vs -gcflags=-S -N -l)",
       },
+      {
+        label: "External Packages",
+        description: config.hideExternalPackages !== false ? "hidden" : "visible",
+        detail:
+          "Show only your project's assembly (hides stdlib, runtime, and third-party deps)",
+      },
     ];
 
     const selected = await vscode.window.showQuickPick(items, {
@@ -339,6 +387,7 @@ export class GoEnvManager implements vscode.Disposable {
       GOFLAGS: () => this.selectGoFlags(),
       GOEXPERIMENT: () => this.selectGoExperiment(),
       Optimizations: () => this.toggleOptimizations(),
+      "External Packages": () => this.toggleExternalFilter(),
     };
     await envSelectors[selected.label]?.();
   }
@@ -369,5 +418,6 @@ export class GoEnvManager implements vscode.Disposable {
     this.goArchItem.dispose();
     this.goOSItem.dispose();
     this.goOptimizationsItem.dispose();
+    this.goInternalFilterItem.dispose();
   }
 }

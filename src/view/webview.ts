@@ -1,5 +1,6 @@
 import {
   Disposable,
+  ProgressLocation,
   TextEditor,
   TextEditorDecorationType,
   TextEditorRevealType,
@@ -8,16 +9,19 @@ import {
   ViewColumn,
   WebviewPanel,
   window,
+  workspace,
 } from "vscode";
 import { streamAsm } from "../assembly";
 import { AssemblyContainer } from "../assembly/container";
+import { filterToUserModule } from "../assembly/filter";
 import { prioritizeAssemblyBlocks } from "../assembly/order";
 import { GoEnvManager } from "../env";
 import { filename } from "../format";
 import { getFunctions } from "../go/dependencies";
+import { getModuleName } from "../go/module";
 import { matchesSourceFile, SourceFileMatchTarget } from "./sourceMatch";
 import { createSourceMatchTarget } from "./sourceMatchTarget";
-import { getShellHtml, getAsmContentHtml } from "./webviewHtml";
+import { getAsmContentHtml, getShellHtml } from "./webviewHtml";
 
 /**
  * Finds the best matching source editor for the given source file.
@@ -135,30 +139,64 @@ export class AssemblyView implements Disposable {
       if (generation !== this._updateGeneration) {
         return;
       }
-      const errDetail = err instanceof Error ? err.message : JSON.stringify(err, undefined, 2);
-      void this.panel.webview.postMessage({ type: "updateStatus", message: `Error: ${errDetail}` });
+      const errDetail =
+        err instanceof Error ? err.message : JSON.stringify(err, undefined, 2);
+      void this.panel.webview.postMessage({
+        type: "updateStatus",
+        message: `Error: ${errDetail}`,
+      });
     }
   }
 
   /** Renders the current assembly blocks in the webview.
    * Should be called after updating the assembly container with new blocks. */
   async updateView() {
-    try {
-      const funcs = await getFunctions(this.fileUri);
-      const prioritized = prioritizeAssemblyBlocks(this._asmContainer.blocks, funcs);
+    const popts = {
+      location: ProgressLocation.Window,
+      cancellable: false,
+      title: "Rendering assembly view",
+    };
 
-      let b = prioritized;
-      if (b.length > 1000) {
-        b = b.slice(0, 1000);
+    return window.withProgress(popts, async (progress, token) => {
+      try {
+        const funcs = await getFunctions(this.fileUri);
+        let asmBlocks = this._asmContainer.blocks;
+
+        if (this.envManager.getHideExternalPackages()) {
+          const ws = workspace.getWorkspaceFolder(this.fileUri);
+          const cwd = ws?.uri.fsPath;
+          const moduleName = cwd ? await getModuleName(cwd) : undefined;
+          if (moduleName) {
+            asmBlocks = filterToUserModule(asmBlocks, moduleName);
+          }
+        }
+
+        asmBlocks = prioritizeAssemblyBlocks(asmBlocks, funcs);
+
+        if (asmBlocks.length > 100) {
+          asmBlocks = asmBlocks.slice(0, 100);
+        }
+        this._asmContainer.rebuildMaps(asmBlocks, (file) =>
+          matchesSourceFile(file, this.sourceMatchTarget),
+        );
+
+        const html = getAsmContentHtml(
+          asmBlocks,
+          this._asmContainer.lineToSource,
+          this.sourceMatchTarget,
+        );
+        void this.panel.webview.postMessage({ type: "updateAsm", html });
+      } catch (err: unknown) {
+        const errDetail =
+          err instanceof Error
+            ? err.message
+            : JSON.stringify(err, undefined, 2);
+        void this.panel.webview.postMessage({
+          type: "updateStatus",
+          message: `Error: ${errDetail}`,
+        });
       }
-      this._asmContainer.rebuildMaps(b, (file) => matchesSourceFile(file, this.sourceMatchTarget));
-
-      const html = getAsmContentHtml(b, this._asmContainer.lineToSource, this.sourceMatchTarget);
-      void this.panel.webview.postMessage({ type: "updateAsm", html });
-    } catch (err: unknown) {
-      const errDetail = err instanceof Error ? err.message : JSON.stringify(err, undefined, 2);
-      void this.panel.webview.postMessage({ type: "updateStatus", message: `Error: ${errDetail}` });
-    }
+    });
   }
 
   private _handleWebviewMessage(msg: unknown) {
