@@ -6,12 +6,12 @@
   "icon": "resources/icon.png",
   "pricing": "Free",
   "publisher": "DaanV2",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "author": {
     "name": "DaanV2"
   },
   "engines": {
-    "vscode": "^1.103.0"
+    "vscode": "^1.118.0"
   },
   "repository": {
     "type": "git",
