@@ -570,6 +570,138 @@ export const INSTRUCTION_HOVER: Readonly<Record<string, HoverItem>> = {
     description: "Bitwise AND of two 8-bit values, setting flags.",
     category: "Comparison",
   },
+  // -- Conditional Move --
+  CMOVQCC: {
+    title: "CMOVQCC — Move Quadword if Carry Clear",
+    description:
+      "Conditionally move a 64-bit value if the Carry Flag (CF) is clear (unsigned above-or-equal). Avoids a branch mispredict compared to a JCC + MOVQ pair.",
+    category: "Conditional Move",
+  },
+  CMOVQCS: {
+    title: "CMOVQCS — Move Quadword if Carry Set",
+    description: "Conditionally move a 64-bit value if the Carry Flag (CF) is set (unsigned below).",
+    category: "Conditional Move",
+  },
+  CMOVQEQ: {
+    title: "CMOVQEQ — Move Quadword if Equal",
+    description: "Conditionally move a 64-bit value if the Zero Flag (ZF) is set (equal).",
+    category: "Conditional Move",
+  },
+  CMOVQNE: {
+    title: "CMOVQNE — Move Quadword if Not Equal",
+    description: "Conditionally move a 64-bit value if the Zero Flag (ZF) is clear (not equal).",
+    category: "Conditional Move",
+  },
+  CMOVQGT: {
+    title: "CMOVQGT — Move Quadword if Greater (signed)",
+    description: "Conditionally move a 64-bit value if greater than, using a signed comparison (ZF=0 and SF=OF).",
+    category: "Conditional Move",
+  },
+  CMOVQGE: {
+    title: "CMOVQGE — Move Quadword if Greater or Equal (signed)",
+    description: "Conditionally move a 64-bit value if greater than or equal, using a signed comparison (SF=OF).",
+    category: "Conditional Move",
+  },
+  CMOVQLT: {
+    title: "CMOVQLT — Move Quadword if Less (signed)",
+    description: "Conditionally move a 64-bit value if less than, using a signed comparison (SF≠OF).",
+    category: "Conditional Move",
+  },
+  CMOVQLE: {
+    title: "CMOVQLE — Move Quadword if Less or Equal (signed)",
+    description: "Conditionally move a 64-bit value if less than or equal, using a signed comparison (ZF=1 or SF≠OF).",
+    category: "Conditional Move",
+  },
+  CMOVQHI: {
+    title: "CMOVQHI — Move Quadword if Above (unsigned)",
+    description: "Conditionally move a 64-bit value if above, using an unsigned comparison (CF=0 and ZF=0).",
+    category: "Conditional Move",
+  },
+  CMOVQLS: {
+    title: "CMOVQLS — Move Quadword if Below or Equal (unsigned)",
+    description: "Conditionally move a 64-bit value if below or equal, using an unsigned comparison (CF=1 or ZF=1).",
+    category: "Conditional Move",
+  },
+  CMOVQMI: {
+    title: "CMOVQMI — Move Quadword if Sign (negative)",
+    description: "Conditionally move a 64-bit value if the Sign Flag (SF) is set.",
+    category: "Conditional Move",
+  },
+  CMOVQPL: {
+    title: "CMOVQPL — Move Quadword if No Sign (non-negative)",
+    description: "Conditionally move a 64-bit value if the Sign Flag (SF) is clear.",
+    category: "Conditional Move",
+  },
+  CMOVQOC: {
+    title: "CMOVQOC — Move Quadword if Overflow Clear",
+    description: "Conditionally move a 64-bit value if the Overflow Flag (OF) is clear.",
+    category: "Conditional Move",
+  },
+  CMOVQOS: {
+    title: "CMOVQOS — Move Quadword if Overflow Set",
+    description: "Conditionally move a 64-bit value if the Overflow Flag (OF) is set.",
+    category: "Conditional Move",
+  },
+  CMOVQPC: {
+    title: "CMOVQPC — Move Quadword if Parity Clear",
+    description: "Conditionally move a 64-bit value if the Parity Flag (PF) is clear (odd parity).",
+    category: "Conditional Move",
+  },
+  CMOVQPS: {
+    title: "CMOVQPS — Move Quadword if Parity Set",
+    description: "Conditionally move a 64-bit value if the Parity Flag (PF) is set (even parity).",
+    category: "Conditional Move",
+  },
+  CMOVLCC: {
+    title: "CMOVLCC — Move Long if Carry Clear",
+    description: "32-bit form of CMOVQCC: conditionally move if CF is clear (unsigned above-or-equal).",
+    category: "Conditional Move",
+  },
+  CMOVLCS: {
+    title: "CMOVLCS — Move Long if Carry Set",
+    description: "32-bit form of CMOVQCS: conditionally move if CF is set (unsigned below).",
+    category: "Conditional Move",
+  },
+  CMOVLEQ: {
+    title: "CMOVLEQ — Move Long if Equal",
+    description: "32-bit form of CMOVQEQ: conditionally move if ZF is set (equal).",
+    category: "Conditional Move",
+  },
+  CMOVLNE: {
+    title: "CMOVLNE — Move Long if Not Equal",
+    description: "32-bit form of CMOVQNE: conditionally move if ZF is clear (not equal).",
+    category: "Conditional Move",
+  },
+  CMOVLGT: {
+    title: "CMOVLGT — Move Long if Greater (signed)",
+    description: "32-bit form of CMOVQGT: conditionally move if greater than (signed).",
+    category: "Conditional Move",
+  },
+  CMOVLGE: {
+    title: "CMOVLGE — Move Long if Greater or Equal (signed)",
+    description: "32-bit form of CMOVQGE: conditionally move if greater than or equal (signed).",
+    category: "Conditional Move",
+  },
+  CMOVLLT: {
+    title: "CMOVLLT — Move Long if Less (signed)",
+    description: "32-bit form of CMOVQLT: conditionally move if less than (signed).",
+    category: "Conditional Move",
+  },
+  CMOVLLE: {
+    title: "CMOVLLE — Move Long if Less or Equal (signed)",
+    description: "32-bit form of CMOVQLE: conditionally move if less than or equal (signed).",
+    category: "Conditional Move",
+  },
+  CMOVLHI: {
+    title: "CMOVLHI — Move Long if Above (unsigned)",
+    description: "32-bit form of CMOVQHI: conditionally move if above (unsigned).",
+    category: "Conditional Move",
+  },
+  CMOVLLS: {
+    title: "CMOVLLS — Move Long if Below or Equal (unsigned)",
+    description: "32-bit form of CMOVQLS: conditionally move if below or equal (unsigned).",
+    category: "Conditional Move",
+  },
   // -- Control Flow --
   JMP: {
     title: "JMP — Unconditional Jump",
@@ -908,5 +1040,188 @@ export const INSTRUCTION_HOVER: Readonly<Record<string, HoverItem>> = {
     title: "HLT — Halt",
     description: "Halt the processor until the next external interrupt.",
     category: "System",
+  },
+  // -- Vector / AVX --
+  VMOVQ: {
+    title: "VMOVQ — Vector Move Quadword",
+    description: "AVX form: move a 64-bit value between a register/memory location and the low bits of an XMM register.",
+    category: "Vector / AVX",
+  },
+  VMOVD: {
+    title: "VMOVD — Vector Move Doubleword",
+    description: "AVX form: move a 32-bit value between a register/memory location and the low bits of an XMM register.",
+    category: "Vector / AVX",
+  },
+  VMOVDQU: {
+    title: "VMOVDQU — Vector Move Unaligned Double Quadword",
+    description: "Load or store 128/256/512 bits of packed integer data without requiring alignment.",
+    category: "Vector / AVX",
+  },
+  VMOVDQA: {
+    title: "VMOVDQA — Vector Move Aligned Double Quadword",
+    description: "Load or store 128/256/512 bits of packed integer data; the memory operand must be aligned to the vector width.",
+    category: "Vector / AVX",
+  },
+  VMOVUPS: {
+    title: "VMOVUPS — Vector Move Unaligned Packed Single",
+    description: "Load or store packed single-precision floats without requiring alignment.",
+    category: "Vector / AVX",
+  },
+  VMOVUPD: {
+    title: "VMOVUPD — Vector Move Unaligned Packed Double",
+    description: "Load or store packed double-precision floats without requiring alignment.",
+    category: "Vector / AVX",
+  },
+  VMOVAPS: {
+    title: "VMOVAPS — Vector Move Aligned Packed Single",
+    description: "Load or store packed single-precision floats; the memory operand must be aligned to the vector width.",
+    category: "Vector / AVX",
+  },
+  VMOVAPD: {
+    title: "VMOVAPD — Vector Move Aligned Packed Double",
+    description: "Load or store packed double-precision floats; the memory operand must be aligned to the vector width.",
+    category: "Vector / AVX",
+  },
+  VADDPS: {
+    title: "VADDPS — Vector Add Packed Single",
+    description: "Add packed single-precision floating-point values lane-wise.",
+    category: "Vector / AVX",
+  },
+  VADDPD: {
+    title: "VADDPD — Vector Add Packed Double",
+    description: "Add packed double-precision floating-point values lane-wise.",
+    category: "Vector / AVX",
+  },
+  VSUBPS: {
+    title: "VSUBPS — Vector Subtract Packed Single",
+    description: "Subtract packed single-precision floating-point values lane-wise.",
+    category: "Vector / AVX",
+  },
+  VSUBPD: {
+    title: "VSUBPD — Vector Subtract Packed Double",
+    description: "Subtract packed double-precision floating-point values lane-wise.",
+    category: "Vector / AVX",
+  },
+  VMULPS: {
+    title: "VMULPS — Vector Multiply Packed Single",
+    description: "Multiply packed single-precision floating-point values lane-wise.",
+    category: "Vector / AVX",
+  },
+  VMULPD: {
+    title: "VMULPD — Vector Multiply Packed Double",
+    description: "Multiply packed double-precision floating-point values lane-wise.",
+    category: "Vector / AVX",
+  },
+  VPADDB: {
+    title: "VPADDB — Vector Packed Add Bytes",
+    description: "Add packed 8-bit integers lane-wise across the vector register.",
+    category: "Vector / AVX",
+  },
+  VPADDW: {
+    title: "VPADDW — Vector Packed Add Words",
+    description: "Add packed 16-bit integers lane-wise across the vector register.",
+    category: "Vector / AVX",
+  },
+  VPADDD: {
+    title: "VPADDD — Vector Packed Add Doublewords",
+    description: "Add packed 32-bit integers lane-wise across the vector register.",
+    category: "Vector / AVX",
+  },
+  VPADDQ: {
+    title: "VPADDQ — Vector Packed Add Quadwords",
+    description: "Add packed 64-bit integers lane-wise across the vector register.",
+    category: "Vector / AVX",
+  },
+  VPSUBB: {
+    title: "VPSUBB — Vector Packed Subtract Bytes",
+    description: "Subtract packed 8-bit integers lane-wise across the vector register.",
+    category: "Vector / AVX",
+  },
+  VPSUBW: {
+    title: "VPSUBW — Vector Packed Subtract Words",
+    description: "Subtract packed 16-bit integers lane-wise across the vector register.",
+    category: "Vector / AVX",
+  },
+  VPSUBD: {
+    title: "VPSUBD — Vector Packed Subtract Doublewords",
+    description: "Subtract packed 32-bit integers lane-wise across the vector register.",
+    category: "Vector / AVX",
+  },
+  VPSUBQ: {
+    title: "VPSUBQ — Vector Packed Subtract Quadwords",
+    description: "Subtract packed 64-bit integers lane-wise across the vector register.",
+    category: "Vector / AVX",
+  },
+  VPAND: {
+    title: "VPAND — Vector Packed Bitwise AND",
+    description: "Bitwise AND of two vector registers, applied across the full register width.",
+    category: "Vector / AVX",
+  },
+  VPOR: {
+    title: "VPOR — Vector Packed Bitwise OR",
+    description: "Bitwise OR of two vector registers, applied across the full register width.",
+    category: "Vector / AVX",
+  },
+  VPXOR: {
+    title: "VPXOR — Vector Packed Bitwise XOR",
+    description:
+      "Bitwise XOR of two vector registers. Commonly used to zero a register: VPXOR X0, X0, X0.",
+    category: "Vector / AVX",
+  },
+  VXORPS: {
+    title: "VXORPS — Vector Bitwise XOR Packed Single",
+    description: "Bitwise XOR of two vector registers, treating operands as packed single-precision floats.",
+    category: "Vector / AVX",
+  },
+  VXORPD: {
+    title: "VXORPD — Vector Bitwise XOR Packed Double",
+    description: "Bitwise XOR of two vector registers, treating operands as packed double-precision floats.",
+    category: "Vector / AVX",
+  },
+  VPCMPEQB: {
+    title: "VPCMPEQB — Vector Packed Compare Equal Bytes",
+    description: "Compare packed bytes for equality lane-wise, producing an all-ones or all-zeros mask per lane.",
+    category: "Vector / AVX",
+  },
+  VPCMPEQD: {
+    title: "VPCMPEQD — Vector Packed Compare Equal Doublewords",
+    description: "Compare packed 32-bit integers for equality lane-wise, producing a mask per lane.",
+    category: "Vector / AVX",
+  },
+  VPSHUFB: {
+    title: "VPSHUFB — Vector Packed Shuffle Bytes",
+    description: "Shuffle bytes within a vector register according to indices in a control operand.",
+    category: "Vector / AVX",
+  },
+  VPBROADCASTB: {
+    title: "VPBROADCASTB — Vector Packed Broadcast Byte",
+    description: "Broadcast a single byte from the source to every lane of the destination vector register.",
+    category: "Vector / AVX",
+  },
+  VPBROADCASTQ: {
+    title: "VPBROADCASTQ — Vector Packed Broadcast Quadword",
+    description: "Broadcast a 64-bit value from the source to every quadword lane of the destination vector register.",
+    category: "Vector / AVX",
+  },
+  VFMADD213PD: {
+    title: "VFMADD213PD — Fused Multiply-Add Packed Double (213 form)",
+    description: "Computes dst = (src1 × dst) + src2 for packed doubles in a single rounded fused operation.",
+    category: "Vector / AVX",
+  },
+  VFMADD213PS: {
+    title: "VFMADD213PS — Fused Multiply-Add Packed Single (213 form)",
+    description: "Computes dst = (src1 × dst) + src2 for packed singles in a single rounded fused operation.",
+    category: "Vector / AVX",
+  },
+  VZEROUPPER: {
+    title: "VZEROUPPER — Zero Upper Bits of YMM Registers",
+    description:
+      "Clear the upper 128 bits of all YMM registers to avoid AVX/SSE transition penalties. Commonly emitted before returning from AVX code.",
+    category: "Vector / AVX",
+  },
+  VZEROALL: {
+    title: "VZEROALL — Zero All YMM Registers",
+    description: "Zero the entire contents of all YMM registers.",
+    category: "Vector / AVX",
   },
 };
